@@ -1,0 +1,15 @@
+name: Sample Job on Self-Hosted Runner
+
+on:
+  repository_dispatch:
+    types: [run-sample-job]
+
+jobs:
+  sample:
+    runs-on: self-hosted
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run sample script
+        run: echo "Hello from self-hosted runner!"
