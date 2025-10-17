@@ -577,7 +577,7 @@ install_initrd_confidential() {
 # Install NVIDIA GPU image
 install_image_nvidia_gpu() {
 	export AGENT_POLICY
-	EXTRA_PKGS="apt ${EXTRA_PKGS}"
+	EXTRA_PKGS="apt curl ${EXTRA_PKGS}"
 	NVIDIA_GPU_STACK=${NVIDIA_GPU_STACK:-"latest,compute,dcgm"}
 	install_image "nvidia-gpu"
 }
@@ -585,7 +585,7 @@ install_image_nvidia_gpu() {
 # Install NVIDIA GPU initrd
 install_initrd_nvidia_gpu() {
 	export AGENT_POLICY
-	EXTRA_PKGS="apt ${EXTRA_PKGS}"
+	EXTRA_PKGS="apt curl ${EXTRA_PKGS}"
 	NVIDIA_GPU_STACK=${NVIDIA_GPU_STACK:-"latest,compute,dcgm"}
 	install_initrd "nvidia-gpu"
 }
@@ -593,7 +593,7 @@ install_initrd_nvidia_gpu() {
 # Instal NVIDIA GPU confidential image
 install_image_nvidia_gpu_confidential() {
 	export AGENT_POLICY
-	EXTRA_PKGS="apt ${EXTRA_PKGS}"
+	EXTRA_PKGS="apt curl ${EXTRA_PKGS}"
 	# TODO: export MEASURED_ROOTFS=yes
 	NVIDIA_GPU_STACK=${NVIDIA_GPU_STACK:-"latest,compute"}
 	install_image "nvidia-gpu-confidential"
@@ -602,7 +602,7 @@ install_image_nvidia_gpu_confidential() {
 # Install NVIDIA GPU confidential initrd
 install_initrd_nvidia_gpu_confidential() {
 	export AGENT_POLICY
-	EXTRA_PKGS="apt ${EXTRA_PKGS}"
+	EXTRA_PKGS="apt curl ${EXTRA_PKGS}"
 	# TODO: export MEASURED_ROOTFS=yes
 	NVIDIA_GPU_STACK=${NVIDIA_GPU_STACK:-"latest,compute"}
 	install_initrd "nvidia-gpu-confidential"
@@ -1346,9 +1346,16 @@ handle_build() {
 				pushd "${kernel_headers_dir}"
 				find . -type f -name "*.${KERNEL_HEADERS_PKG_TYPE}" -exec tar -rvf kernel-headers.tar {} +
 				if [ -n "${KBUILD_SIGN_PIN}" ]; then
-					head -n1 kata-linux-*/certs/signing_key.pem | grep -q "ENCRYPTED PRIVATE KEY" || die "signing_key.pem is not encrypted"
-					mv kata-linux-*/certs/signing_key.pem .
-					mv kata-linux-*/certs/signing_key.x509 .
+					# For those 2 we can simply do a `|| true` as the signing_key.{pem,x509} are either:
+					# * already in ., as we're using a cached tarball
+					# * will be moved here, in case we had built the kernel
+					mv kata-linux-*/certs/signing_key.pem . || true
+					mv kata-linux-*/certs/signing_key.x509 . || true
+
+					# Then we can check for the key on ., as it should always be here on both cases
+					# (cached or built kernel).
+					head -n1 "signing_key.pem" | grep -q "ENCRYPTED PRIVATE KEY" || die "signing_key.pem is not encrypted"
+
 					tar -rvf kernel-headers.tar signing_key.pem signing_key.x509 --remove-files
 				fi
 				zstd -T0 kernel-headers.tar -o kernel-headers.tar.zst

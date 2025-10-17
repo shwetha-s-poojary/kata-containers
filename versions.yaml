@@ -88,8 +88,8 @@ assets:
     qemu:
       description: "VMM that uses KVM"
       url: "https://github.com/qemu/qemu"
-      version: "v10.1.0"
-      tag: "v10.1.0"
+      version: "v10.1.1"
+      tag: "v10.1.1"
       # Do not include any non-full release versions
       # Break the line *without CR or space being appended*, to appease
       # yamllint, and note the deliberate ' ' at the end of the expression.
@@ -263,10 +263,10 @@ externals:
     # version older than them.
     version: "v1.7.25"
     lts: "v1.7"
-    active: "v2.0"
+    active: "v2.1"
     # keep the latest version to make the current PR ci work, once it was
     # merged,we can remove the latest version.
-    latest: "v2.0"
+    latest: "v2.2"
 
   critools:
     description: "CLI tool for Container Runtime Interface (CRI)"
@@ -344,6 +344,8 @@ externals:
     url: "https://github.com/dragonflyoss/image-service"
     version: "v2.2.3"
 
+  # Keep the version here aligned with the NYDUS_SNAPSHOTTER_VERSION
+  # on tools/packaging/kata-deploy/Dockerfile
   nydus-snapshotter:
     description: "Snapshotter for Nydus image acceleration service"
     url: "https://github.com/containerd/nydus-snapshotter"
@@ -352,7 +354,7 @@ externals:
   opa:
     description: "Open Policy Agent"
     url: "https://github.com/open-policy-agent/opa"
-    version: "v1.6.0"
+    version: "v1.9.0"
 
   ovmf:
     description: "Firmware, implementation of UEFI for virtual machines."

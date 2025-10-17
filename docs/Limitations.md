@@ -166,19 +166,26 @@ moment.
 See [this issue](https://github.com/kata-containers/runtime/issues/2812) for more details.
 [Another issue](https://github.com/kata-containers/kata-containers/issues/1728) focuses on the case of `emptyDir`.
 
+### Kubernetes [hostPath][k8s-hostpath] volumes
+
+When the source path of a hostPath volume is under `/dev`, and the path
+either corresponds to a host device or is not accessible by the Kata
+shim, the Kata agent bind mounts the source path directly from the
+*guest* filesystem into the container.
+
+[k8s-hostpath]: https://kubernetes.io/docs/concepts/storage/volumes/#hostpath
+
 ## Host resource sharing
 
 ### Privileged containers
 
 Privileged support in Kata is essentially different from `runc` containers.
-The container runs with elevated capabilities within the guest and is granted
-access to guest devices instead of the host devices.
+The container runs with elevated capabilities within the guest.
 This is also true with using `securityContext privileged=true` with Kubernetes.
 
-The container may also be granted full access to a subset of host devices
-(https://github.com/kata-containers/runtime/issues/1568).
-
-See [Privileged Kata Containers](how-to/privileged.md) for how to configure some of this behavior.
+Importantly, the default behavior to pass the host devices to a
+privileged container is not supported in Kata Containers and needs to be
+disabled, see [Privileged Kata Containers](how-to/privileged.md).
 
 # Appendices
 

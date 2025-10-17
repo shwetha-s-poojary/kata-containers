@@ -60,6 +60,7 @@ else
 		"k8s-exec.bats" \
 		"k8s-file-volume.bats" \
 		"k8s-hostname.bats" \
+		"k8s-hostpath-volume.bats" \
 		"k8s-inotify.bats" \
 		"k8s-ip6tables.bats" \
 		"k8s-job.bats" \
@@ -70,6 +71,7 @@ else
 		"k8s-memory.bats" \
 		"k8s-nested-configmap-secret.bats" \
 		"k8s-oom.bats" \
+		"k8s-openvpn.bats" \
 		"k8s-optional-empty-configmap.bats" \
 		"k8s-optional-empty-secret.bats" \
 		"k8s-pid-ns.bats" \
@@ -83,6 +85,7 @@ else
 		"k8s-policy-pvc.bats" \
 		"k8s-policy-rc.bats" \
 		"k8s-port-forward.bats" \
+		"k8s-privileged.bats" \
 		"k8s-projected-volume.bats" \
 		"k8s-qos-pods.bats" \
 		"k8s-replication.bats" \
