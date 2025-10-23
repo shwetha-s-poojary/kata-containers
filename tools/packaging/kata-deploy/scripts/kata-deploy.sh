@@ -35,7 +35,7 @@ info() {
 
 DEBUG="${DEBUG:-"false"}"
 
-SHIMS="${SHIMS:-"clh cloud-hypervisor dragonball fc qemu qemu-coco-dev qemu-runtime-rs qemu-se-runtime-rs qemu-snp qemu-tdx stratovirt qemu-nvidia-gpu qemu-nvidia-gpu-snp qemu-nvidia-gpu-tdx"}"
+SHIMS="${SHIMS:-"clh cloud-hypervisor dragonball fc qemu qemu-coco-dev qemu-runtime-rs qemu-se-runtime-rs qemu-snp qemu-tdx stratovirt qemu-nvidia-gpu qemu-nvidia-gpu-snp qemu-nvidia-gpu-tdx qemu-cca"}"
 IFS=' ' read -a shims <<< "$SHIMS"
 DEFAULT_SHIM="${DEFAULT_SHIM:-"qemu"}"
 default_shim="$DEFAULT_SHIM"
@@ -358,7 +358,8 @@ function adjust_qemu_cmdline() {
 	# The paths on the kata-containers tarball side look like:
 	# ${dest_dir}/opt/kata/share/kata-qemu/qemu
 	# ${dest_dir}/opt/kata/share/kata-qemu-snp-experimnental/qemu
-	[[ "${shim}" =~ ^(qemu-nvidia-gpu-snp|qemu-nvidia-gpu-tdx)$ ]] && qemu_share=${shim}-experimental
+	# ${dest_dir}/opt/kata/share/kata-qemu-cca-experimental/qemu
+	[[ "${shim}" =~ ^(qemu-nvidia-gpu-snp|qemu-nvidia-gpu-tdx|qemu-cca)$ ]] && qemu_share=${shim}-experimental
 
 	# Both qemu and qemu-coco-dev use exactly the same QEMU, so we can adjust
 	# the shim on the qemu-coco-dev case to qemu
@@ -462,7 +463,10 @@ function install_artifacts() {
 		fi
 
 		if [ "${dest_dir}" != "${default_dest_dir}" ]; then
-			kernel_path=$(tomlq ".hypervisor.${shim}.path" ${kata_config_file} | tr -d \")
+			hypervisor="${shim}"
+			[[ "${shim}" == "qemu"* ]] && hypervisor="qemu"
+
+			kernel_path=$(tomlq ".hypervisor.${hypervisor}.path" ${kata_config_file} | tr -d \")
 			if echo $kernel_path | grep -q "${dest_dir}"; then
 				# If we got to this point here, it means that we're dealing with
 				# a kata containers configuration file that has already been changed
@@ -476,7 +480,7 @@ function install_artifacts() {
 				sed -i -e "s|${default_dest_dir}|${dest_dir}|g" "${kata_config_file}"
 
 				# Let's only adjust qemu_cmdline for the QEMUs that we build and ship ourselves
-				[[ "${shim}" =~ ^(qemu|qemu-snp|qemu-nvidia-gpu|qemu-nvidia-gpu-snp|qemu-nvidia-gpu-tdx|qemu-se|qemu-coco-dev)$ ]] && \
+				[[ "${shim}" =~ ^(qemu|qemu-snp|qemu-nvidia-gpu|qemu-nvidia-gpu-snp|qemu-nvidia-gpu-tdx|qemu-se|qemu-coco-dev|qemu-cca)$ ]] && \
 					adjust_qemu_cmdline "${shim}" "${kata_config_file}"
 			fi
 		fi
@@ -671,6 +675,10 @@ function configure_containerd_runtime() {
 			fi
 
 			value="${m#*$snapshotters_delimiter}"
+			if [[ "${value}" == "nydus" ]] && [[ -n "${MULTI_INSTALL_SUFFIX}" ]]; then
+				value="${value}-${MULTI_INSTALL_SUFFIX}"
+			fi
+
 			tomlq -i -t $(printf '%s.snapshotter="%s"' ${runtime_table} ${value}) ${configuration_file}
 			break
 		done
@@ -854,13 +862,20 @@ function configure_erofs_snapshotter() {
 function configure_nydus_snapshotter() {
 	info "Configuring nydus-snapshotter"
 
+	local nydus="nydus"
+	local containerd_nydus="nydus-snapshotter"
+	if [[ -n "${MULTI_INSTALL_SUFFIX}" ]]; then
+		nydus="${nydus}-${MULTI_INSTALL_SUFFIX}"
+		containerd_nydus="${containerd_nydus}-${MULTI_INSTALL_SUFFIX}"
+	fi
+
 	configuration_file="${1}"
 	pluginid="${2}"
 
 	tomlq -i -t $(printf '.plugins.%s.disable_snapshot_annotations=false' ${pluginid}) ${configuration_file}
 
-	tomlq -i -t $(printf '.proxy_plugins.nydus.type="snapshot"') ${configuration_file}
-	tomlq -i -t $(printf '.proxy_plugins.nydus.address="/run/containerd-nydus/containerd-nydus-grpc.sock"') ${configuration_file}
+	tomlq -i -t $(printf '.proxy_plugins."%s".type="snapshot"' ${nydus} ) ${configuration_file}
+	tomlq -i -t $(printf '.proxy_plugins."%s".address="/run/%s/containerd-nydus-grpc.sock"' ${nydus} ${containerd_nydus}) ${configuration_file}
 }
 
 function configure_snapshotter() {
@@ -887,7 +902,12 @@ function configure_snapshotter() {
 	case "${snapshotter}" in
 		nydus)
 			configure_nydus_snapshotter "${configuration_file}" "${pluginid}"
-			host_systemctl restart nydus-snapshotter
+
+			nydus_snapshotter="nydus-snapshotter"
+			if [[ -n "${MULTI_INSTALL_SUFFIX}" ]]; then
+				nydus_snapshotter="${nydus_snapshotter}-${MULTI_INSTALL_SUFFIX}"
+			fi
+			host_systemctl restart "${nydus_snapshotter}"
 			;;
 		erofs)
 			configure_erofs_snapshotter "${configuration_file}"
@@ -898,26 +918,45 @@ function configure_snapshotter() {
 function install_nydus_snapshotter() {
 	info "Deploying nydus-snapshotter"
 
-	install -D -m 775 /opt/kata-artifacts/nydus-snapshotter/containerd-nydus-grpc /host/usr/local/bin/containerd-nydus-grpc
-	install -D -m 775 /opt/kata-artifacts/nydus-snapshotter/nydus-overlayfs /host/usr/local/bin/nydus-overlayfs
+	local nydus_snapshotter="nydus-snapshotter"
+	if [[ -n "${MULTI_INSTALL_SUFFIX}" ]]; then
+		nydus_snapshotter="${nydus_snapshotter}-${MULTI_INSTALL_SUFFIX}"
+	fi
 
-	mkdir -p /host/etc/nydus-snapshotter/
-	install -D -m 644 /opt/kata-artifacts/nydus-snapshotter/config-guest-pulling.toml /host/etc/nydus-snapshotter/config-guest-pulling.toml
-	install -D -m 644 /opt/kata-artifacts/nydus-snapshotter/nydus-snapshotter.service /host/etc/systemd/system/nydus-snapshotter.service
+	local config_guest_pulling="/opt/kata-artifacts/nydus-snapshotter/config-guest-pulling.toml"
+	local nydus_snapshotter_service="/opt/kata-artifacts/nydus-snapshotter/nydus-snapshotter.service"
+	
+	# Adjust the paths for the config-guest-pulling.toml and nydus-snapshotter.service
+	sed -i -e "s|@SNAPSHOTTER_ROOT_DIR@|/var/lib/${nydus_snapshotter}|g" "${config_guest_pulling}"
+	sed -i -e "s|@SNAPSHOTTER_GRPC_SOCKET_ADDRESS@|/run/${nydus_snapshotter}/containerd-nydus-grpc.sock|g" "${config_guest_pulling}"
+	sed -i -e "s|@NYDUS_OVERLAYFS_PATH@|${host_install_dir#/host}/nydus-snapshotter/nydus-overlayfs|g" "${config_guest_pulling}"
+
+	sed -i -e "s|@CONTAINERD_NYDUS_GRPC_BINARY@|${host_install_dir#/host}/nydus-snapshotter/containerd-nydus-grpc|g" "${nydus_snapshotter_service}"
+	sed -i -e "s|@CONFIG_GUEST_PULLING@|${host_install_dir#/host}/nydus-snapshotter/config-guest-pulling.toml|g" "${nydus_snapshotter_service}"
+
+	mkdir -p "${host_install_dir}/nydus-snapshotter"
+	install -D -m 775 /opt/kata-artifacts/nydus-snapshotter/containerd-nydus-grpc "${host_install_dir}/nydus-snapshotter/containerd-nydus-grpc"
+	install -D -m 775 /opt/kata-artifacts/nydus-snapshotter/nydus-overlayfs "${host_install_dir}/nydus-snapshotter/nydus-overlayfs"
+
+	install -D -m 644 "${config_guest_pulling}" "${host_install_dir}/nydus-snapshotter/config-guest-pulling.toml"
+	install -D -m 644 "${nydus_snapshotter_service}" "/host/etc/systemd/system/${nydus_snapshotter}.service"
 
 	host_systemctl daemon-reload
-	host_systemctl enable nydus-snapshotter.service
+	host_systemctl enable "${nydus_snapshotter}.service"
 }
 
 function uninstall_nydus_snapshotter() {
 	info "Removing deployed nydus-snapshotter"
-	host_systemctl disable --now nydus-snapshotter.service
 
-	rm -f /host/etc/systemd/system/nydus-snapshotter.service
-	rm -f /host/etc/nydus-snapshotter/config-guest-pulling.toml
+	local nydus_snapshotter="nydus-snapshotter"
+	if [[ -n "${MULTI_INSTALL_SUFFIX}" ]]; then
+		nydus_snapshotter="${nydus_snapshotter}-${MULTI_INSTALL_SUFFIX}"
+	fi
+	
+	host_systemctl disable --now "${nydus_snapshotter}.service"
 
-	rm -f /host/usr/local/bin/nydus-overlayfs
-	rm -f /host/usr/local/bin/containerd-nydus-grpc
+	rm -f "/host/etc/systemd/system/${nydus_snapshotter}.service"
+	rm -rf "${host_install_dir}/nydus-snapshotter"
 
 	host_systemctl daemon-reload
 }
