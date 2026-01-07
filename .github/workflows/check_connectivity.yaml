@@ -3,7 +3,7 @@ name: Self-Hosted Runner Health Check
 # Runs every 30 minutes
 on:
   schedule:
-    - cron: '*/30 * * * *'
+    - cron: '*/15 * * * *'
 
 # Ensure the workflow token can read self-hosted runners
 permissions:
