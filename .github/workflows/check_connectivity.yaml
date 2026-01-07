@@ -1,0 +1,25 @@
+name: Self-Hosted Runner Health Check
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+
+jobs:
+  check-runners:
+    runs-on: ubuntu-latest
+    steps:
+      - name: List self-hosted runners
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          curl -s -H "Authorization: token $GITHUB_TOKEN" \
+          https://api.github.com/repos/$REPO/actions/runners \
+          | jq -r '.runners[] | "\(.name) (\(.os)) - \(.status)"' \
+          | while read line; do
+              echo "$line"
+              if [[ "$line" != *"online"* ]]; then
+                echo "⚠️ Offline!"
+              fi
+            done
+
