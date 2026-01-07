@@ -1,25 +1,33 @@
 name: Self-Hosted Runner Health Check
 
+# Runs every 30 minutes
 on:
   schedule:
     - cron: '*/30 * * * *'
 
+# Ensure the workflow token can read self-hosted runners
+permissions:
+  actions: read
+
 jobs:
   check-runners:
     runs-on: ubuntu-latest
+    env:
+      REPO: ${{ github.repository }}
     steps:
-      - name: List self-hosted runners
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
+      - name: Debug GitHub API response
         run: |
-          curl -s -H "Authorization: token $GITHUB_TOKEN" \
-          https://api.github.com/repos/$REPO/actions/runners \
-          | jq -r '.runners[] | "\(.name) (\(.os)) - \(.status)"' \
-          | while read line; do
-              echo "$line"
-              if [[ "$line" != *"online"* ]]; then
-                echo "⚠️ Offline!"
-              fi
-            done
-
+          echo "Fetching self-hosted runners for $REPO..."
+          RESPONSE=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+            https://api.github.com/repos/$REPO/actions/runners)
+          echo "Raw API response:"
+          echo "$RESPONSE"
+          
+          echo "Listing runners safely:"
+          echo "$RESPONSE" | jq -r '.runners // [] | .[] | "\(.name) (\(.os)) - \(.status)"' \
+            | while read line; do
+                echo "$line"
+                if [[ "$line" != *"online"* ]]; then
+                  echo "⚠️ Offline!"
+                fi
+              done
