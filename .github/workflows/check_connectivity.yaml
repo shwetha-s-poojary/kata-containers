@@ -1,11 +1,11 @@
 name: Self-Hosted Runner Health Check
 
-# Runs every 30 minutes
+# Runs every 15 minutes
 on:
   schedule:
-    - cron: '*/15 * * * *'
+    - cron: '*/5 * * * *'
 
-# Ensure the workflow token can read self-hosted runners
+# Workflow permissions (optional now, PAT has full access)
 permissions:
   actions: read
 
@@ -14,6 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       REPO: ${{ github.repository }}
+      GITHUB_TOKEN: ${{ secrets.MY_GITHUB_PAT }}  # <- Use PAT here
     steps:
       - name: Debug GitHub API response
         run: |
