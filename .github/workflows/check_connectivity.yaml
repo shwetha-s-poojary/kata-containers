@@ -21,8 +21,6 @@ jobs:
           echo "Fetching self-hosted runners for $REPO..."
           RESPONSE=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
             https://api.github.com/repos/$REPO/actions/runners)
-          echo "Raw API response:"
-          echo "$RESPONSE"
           
           echo "Listing runners safely:"
           echo "$RESPONSE" | jq -r '.runners // [] | .[] | "\(.name) (\(.os)) - \(.status)"' \
