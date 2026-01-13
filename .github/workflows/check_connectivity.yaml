@@ -5,7 +5,6 @@ on:
   schedule:
     - cron: '*/5 * * * *'
 
-# Workflow permissions (optional now, PAT has full access)
 permissions:
   actions: read
 
@@ -14,19 +13,28 @@ jobs:
     runs-on: ubuntu-latest
     env:
       REPO: ${{ github.repository }}
-      GITHUB_TOKEN: ${{ secrets.MY_GITHUB_PAT }}  # <- Use PAT here
+      GITHUB_TOKEN: ${{ secrets.MY_GITHUB_PAT }}
+      SLACK_API_TOKEN: ${{ secrets.SLACK_API_TOKEN }}
+      SLACK_CHANNEL: CXXXXXXXX   # <-- replace with your new channel ID
     steps:
-      - name: Debug GitHub API response
+      - name: Check runners and notify Slack if offline
         run: |
           echo "Fetching self-hosted runners for $REPO..."
           RESPONSE=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
             https://api.github.com/repos/$REPO/actions/runners)
-          
+
           echo "Listing runners safely:"
           echo "$RESPONSE" | jq -r '.runners // [] | .[] | "\(.name) (\(.os)) - \(.status)"' \
-            | while read line; do
-                echo "$line"
-                if [[ "$line" != *"online"* ]]; then
-                  echo "⚠️ Offline!"
-                fi
-              done
+          | while read line; do
+              echo "$line"
+              if [[ "$line" != *"online"* ]]; then
+                echo "⚠️ Offline! Sending Slack notification..."
+                curl -s -X POST https://slack.com/api/chat.postMessage \
+                  -H "Authorization: Bearer $SLACK_API_TOKEN" \
+                  -H "Content-Type: application/json" \
+                  -d "{
+                    \"channel\": \"$SLACK_CHANNEL\",
+                    \"text\": \"⚠️ Self-hosted runner offline: $line\"
+                  }" > /dev/null
+              fi
+            done
