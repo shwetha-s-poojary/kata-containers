@@ -125,7 +125,7 @@ If you want to enable SELinux in Permissive mode, add `enforcing=0` to the kerne
 Enable full debug as follows:
 
 ```bash
-$ sudo sed -i -e 's/^# *\(enable_debug\).*=.*$/\1 = true/g' /etc/kata-containers/configuration.toml
+$ sudo sed -i -E 's/^(\s*enable_debug\s*=\s*)false/\1true/' /etc/kata-containers/configuration.toml
 $ sudo sed -i -e 's/^kernel_params = "\(.*\)"/kernel_params = "\1 agent.log=debug initcall_debug"/g' /etc/kata-containers/configuration.toml
 ```
 
@@ -289,14 +289,14 @@ provided by your distribution.
 
 As a prerequisite, you need to install Docker. Otherwise, you will not be
 able to run the `rootfs.sh` script with `USE_DOCKER=true` as expected in
-the following example.
+the following example. Specifying the `OS_VERSION` is required when using `distro="ubuntu"`.
 
 ```bash
 $ export distro="ubuntu" # example
 $ export ROOTFS_DIR="$(realpath kata-containers/tools/osbuilder/rootfs-builder/rootfs)"
 $ sudo rm -rf "${ROOTFS_DIR}"
 $ pushd kata-containers/tools/osbuilder/rootfs-builder
-$ script -fec 'sudo -E USE_DOCKER=true ./rootfs.sh "${distro}"'
+$ script -fec 'sudo -E USE_DOCKER=true OS_VERSION=noble ./rootfs.sh "${distro}"'
 $ popd
 ```
 

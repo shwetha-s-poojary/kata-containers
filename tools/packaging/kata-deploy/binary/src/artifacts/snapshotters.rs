@@ -85,7 +85,11 @@ pub async fn configure_snapshotter(
     runtime: &str,
     config: &Config,
 ) -> Result<()> {
-    let pluginid = if fs::read_to_string(&config.containerd_conf_file)
+    // Get all paths and drop-in capability in one call
+    let paths = config.get_containerd_paths(runtime).await?;
+
+    // Read containerd version from config_file to determine pluginid
+    let pluginid = if fs::read_to_string(&paths.config_file)
         .unwrap_or_default()
         .contains("version = 3")
     {
@@ -94,28 +98,21 @@ pub async fn configure_snapshotter(
         "\"io.containerd.grpc.v1.cri\".containerd"
     };
 
-    let use_drop_in =
-        crate::runtime::is_containerd_capable_of_using_drop_in_files(config, runtime).await?;
-
-    let configuration_file: std::path::PathBuf = if use_drop_in {
-        // Ensure we have the absolute path with /host prefix
-        let base_path = if config.containerd_drop_in_conf_file.starts_with("/host") {
-            // Already has /host prefix
-            Path::new(&config.containerd_drop_in_conf_file).to_path_buf()
+    let configuration_file: std::path::PathBuf = if paths.use_drop_in {
+        // Only add /host prefix if path is not in /etc/containerd (which is mounted from host)
+        let base_path = if paths.drop_in_file.starts_with("/etc/containerd/") {
+            Path::new(&paths.drop_in_file).to_path_buf()
         } else {
-            // Need to add /host prefix
-            let drop_in_path = config.containerd_drop_in_conf_file.trim_start_matches('/');
+            // Need to add /host prefix for paths outside /etc/containerd
+            let drop_in_path = paths.drop_in_file.trim_start_matches('/');
             Path::new("/host").join(drop_in_path)
         };
 
         log::debug!("Snapshotter using drop-in config file: {:?}", base_path);
         base_path
     } else {
-        log::debug!(
-            "Snapshotter using main config file: {}",
-            config.containerd_conf_file
-        );
-        Path::new(&config.containerd_conf_file).to_path_buf()
+        log::debug!("Snapshotter using main config file: {}", paths.config_file);
+        Path::new(&paths.config_file).to_path_buf()
     };
 
     match snapshotter {
@@ -147,6 +144,22 @@ pub async fn install_nydus_snapshotter(config: &Config) -> Result<()> {
         Some(suffix) if !suffix.is_empty() => format!("nydus-snapshotter-{suffix}"),
         _ => "nydus-snapshotter".to_string(),
     };
+
+    // Clean up existing nydus-snapshotter state to ensure fresh start with new version.
+    // This is safe across all K8s distributions (k3s, rke2, k0s, microk8s, etc.) because
+    // we only touch the nydus data directory, not containerd's internals.
+    // When containerd tries to use non-existent snapshots, it will re-pull/re-unpack.
+    let nydus_data_dir = format!("/host/var/lib/{nydus_snapshotter}");
+    info!("Cleaning up existing nydus-snapshotter state at {}", nydus_data_dir);
+
+    // Stop the service first if it exists (ignore errors if not running)
+    let _ = utils::host_systemctl(&["stop", &format!("{nydus_snapshotter}.service")]);
+
+    // Remove the data directory to clean up old snapshots with potentially incorrect labels
+    if Path::new(&nydus_data_dir).exists() {
+        info!("Removing nydus data directory: {}", nydus_data_dir);
+        fs::remove_dir_all(&nydus_data_dir).ok();
+    }
 
     let config_guest_pulling = "/opt/kata-artifacts/nydus-snapshotter/config-guest-pulling.toml";
     let nydus_snapshotter_service =
@@ -196,19 +209,37 @@ pub async fn install_nydus_snapshotter(config: &Config) -> Result<()> {
 
     fs::create_dir_all(format!("{}/nydus-snapshotter", config.host_install_dir))?;
 
+    // Remove existing binaries before copying new ones.
+    // This is crucial for atomic updates (same pattern as copy_artifacts in install.rs):
+    // - If the file is in use (e.g., a running binary), the old inode stays alive
+    // - The new copy creates a new inode
+    // - Running processes keep using the old inode until they exit
+    // - New processes use the new file immediately
+    // Without this, fs::copy would fail with ETXTBSY ("Text file busy") if the
+    // nydus-snapshotter service is still running from a previous installation.
+    let grpc_binary = format!(
+        "{}/nydus-snapshotter/containerd-nydus-grpc",
+        config.host_install_dir
+    );
+    let overlayfs_binary = format!(
+        "{}/nydus-snapshotter/nydus-overlayfs",
+        config.host_install_dir
+    );
+    for binary in [&grpc_binary, &overlayfs_binary] {
+        match fs::remove_file(binary) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e.into()),
+        }
+    }
+
     fs::copy(
         "/opt/kata-artifacts/nydus-snapshotter/containerd-nydus-grpc",
-        format!(
-            "{}/nydus-snapshotter/containerd-nydus-grpc",
-            config.host_install_dir
-        ),
+        &grpc_binary,
     )?;
     fs::copy(
         "/opt/kata-artifacts/nydus-snapshotter/nydus-overlayfs",
-        format!(
-            "{}/nydus-snapshotter/nydus-overlayfs",
-            config.host_install_dir
-        ),
+        &overlayfs_binary,
     )?;
 
     fs::write(

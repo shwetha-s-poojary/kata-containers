@@ -25,12 +25,17 @@ const CONTAINERD_BASED_RUNTIMES: &[&str] = &[
     "microk8s",
 ];
 
-/// Runtimes that don't support containerd drop-in configuration files
+/// Runtimes that don't support containerd drop-in configuration files.
+///
+/// K3s and RKE2 generate the final config from a template (config.toml.tmpl or
+/// config-v3.toml.tmpl); they do not merge drop-in files when rendering, so we
+/// must write the Kata runtime block directly into the template.
 const RUNTIMES_WITHOUT_CONTAINERD_DROP_IN_SUPPORT: &[&str] = &[
     "crio",
-    "k0s-worker",
-    "k0s-controller",
-    "microk8s",
+    "k3s",
+    "k3s-agent",
+    "rke2-agent",
+    "rke2-server",
 ];
 
 fn is_containerd_based(runtime: &str) -> bool {
@@ -85,25 +90,33 @@ pub async fn get_container_runtime(config: &Config) -> Result<String> {
     Ok(runtime)
 }
 
-/// Check if a containerd version string supports drop-in files
-/// Returns Ok(()) if version >= 2.0, Err otherwise
-fn check_containerd_version_supports_drop_in(runtime_version: &str) -> Result<()> {
-    let version_re = Regex::new(r"containerd://(\d+)\.(\d+)")?;
+/// Returns true if containerRuntimeVersion (e.g. "containerd://2.1.5-k3s1") indicates
+/// containerd 2.x or newer, false for 1.x or unparseable. Used for drop-in support
+/// and for K3s/RKE2 template selection (config-v3.toml.tmpl vs config.toml.tmpl).
+pub fn containerd_version_is_2_or_newer(runtime_version: &str) -> bool {
+    let version_re = match Regex::new(r"containerd://(\d+)\.(\d+)") {
+        Ok(r) => r,
+        Err(_) => return false,
+    };
     if let Some(caps) = version_re.captures(runtime_version) {
-        let major: u32 = caps.get(1).unwrap().as_str().parse()?;
-        if major >= 2 {
-            return Ok(());
+        if let Ok(major) = caps.get(1).unwrap().as_str().parse::<u32>() {
+            return major >= 2;
         }
-        return Err(anyhow::anyhow!(
-            "containerd version {}.x does not support drop-in files (requires >= 2.0)",
-            major
-        ));
     }
-    // If version string is malformed/unparseable, conservatively assume no support
-    Err(anyhow::anyhow!(
-        "Unable to parse containerd version from '{}', assuming no drop-in support",
-        runtime_version
-    ))
+    false
+}
+
+/// Check if a containerd version string supports drop-in files.
+/// Wrapper around containerd_version_is_2_or_newer for call sites that need Result.
+fn check_containerd_version_supports_drop_in(runtime_version: &str) -> Result<()> {
+    if containerd_version_is_2_or_newer(runtime_version) {
+        Ok(())
+    } else {
+        Err(anyhow::anyhow!(
+            "containerd version does not support drop-in files (requires >= 2.0), got '{}'",
+            runtime_version
+        ))
+    }
 }
 
 pub async fn is_containerd_capable_of_using_drop_in_files(
@@ -112,6 +125,11 @@ pub async fn is_containerd_capable_of_using_drop_in_files(
 ) -> Result<bool> {
     if RUNTIMES_WITHOUT_CONTAINERD_DROP_IN_SUPPORT.contains(&runtime) {
         return Ok(false);
+    }
+
+    // k0s always supports drop-in files (auto-loads from containerd.d/)
+    if runtime == "k0s-worker" || runtime == "k0s-controller" {
+        return Ok(true);
     }
 
     // Check containerd version - only 2.0+ supports drop-in files properly
@@ -138,7 +156,7 @@ pub async fn cleanup_cri_runtime(config: &Config, runtime: &str) -> Result<()> {
         "cleanup_cri_runtime: Starting cleanup for runtime={}",
         runtime
     );
-    
+
     if runtime == "crio" {
         log::info!("cleanup_cri_runtime: Cleaning up crio");
         crio::cleanup_crio(config).await?;
@@ -166,69 +184,53 @@ pub async fn cleanup_cri_runtime(config: &Config, runtime: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
-    /// Helper function to test version check with expected error result
-    fn assert_version_check_error(version: &str) {
+    // --- containerd_version_is_2_or_newer ---
+
+    #[rstest]
+    #[case("containerd://2.0.0", true)]
+    #[case("containerd://2.1.5", true)]
+    #[case("containerd://2.1.5-k3s1", true)]
+    #[case("containerd://2.2.0", true)]
+    #[case("containerd://2.3.1", true)]
+    #[case("containerd://2.0.0-rc.1", true)]
+    #[case("containerd://1.6.28", false)]
+    #[case("containerd://1.7.15", false)]
+    #[case("containerd://1.7.0", false)]
+    #[case("containerd://", false)]
+    #[case("1.7.0", false)]
+    #[case("not-a-version", false)]
+    fn test_containerd_version_is_2_or_newer(#[case] version: &str, #[case] expected: bool) {
+        assert_eq!(
+            containerd_version_is_2_or_newer(version),
+            expected,
+            "version: {}",
+            version
+        );
+    }
+
+    // --- check_containerd_version_supports_drop_in (Result wrapper) ---
+
+    #[rstest]
+    #[case("containerd://2.0.0", true)]
+    #[case("containerd://2.1.5-k3s1", true)]
+    #[case("containerd://1.7.15", false)]
+    #[case("containerd://1.6.28", false)]
+    #[case("containerd://", false)]
+    #[case("1.7.0", false)]
+    #[case("not-a-version", false)]
+    fn test_check_containerd_version_supports_drop_in(
+        #[case] version: &str,
+        #[case] expected_ok: bool,
+    ) {
         let result = check_containerd_version_supports_drop_in(version);
-        assert!(result.is_err(), "Expected error for version: {}", version);
-    }
-
-    /// Helper function to test version check with expected success result
-    fn assert_version_check_ok(version: &str) {
-        let result = check_containerd_version_supports_drop_in(version);
-        assert!(result.is_ok(), "Expected success for version: {}", version);
-    }
-
-    #[test]
-    fn test_containerd_version_1_6_returns_error() {
-        assert_version_check_error("containerd://1.6.28");
-    }
-
-    #[test]
-    fn test_containerd_version_1_7_returns_error() {
-        assert_version_check_error("containerd://1.7.15");
-    }
-
-    #[test]
-    fn test_containerd_version_2_0_returns_ok() {
-        assert_version_check_ok("containerd://2.0.0");
-    }
-
-    #[test]
-    fn test_containerd_version_2_1_returns_ok() {
-        assert_version_check_ok("containerd://2.1.5");
-    }
-
-    #[test]
-    fn test_containerd_version_2_2_returns_ok() {
-        assert_version_check_ok("containerd://2.2.0");
-    }
-
-    #[test]
-    fn test_containerd_version_2_3_returns_ok() {
-        assert_version_check_ok("containerd://2.3.1");
-    }
-
-    #[test]
-    fn test_containerd_version_with_prerelease() {
-        assert_version_check_ok("containerd://2.0.0-rc.1");
-    }
-
-    #[test]
-    fn test_containerd_version_invalid_format() {
-        // Missing version number - conservatively assume no support
-        assert_version_check_error("containerd://");
-    }
-
-    #[test]
-    fn test_containerd_version_no_protocol() {
-        // No protocol prefix - conservatively assume no support
-        assert_version_check_error("1.7.0");
-    }
-
-    #[test]
-    fn test_containerd_version_malformed() {
-        // Malformed version - conservatively assume no support
-        assert_version_check_error("not-a-version");
+        assert_eq!(
+            result.is_ok(),
+            expected_ok,
+            "version: {}, result: {:?}",
+            version,
+            result
+        );
     }
 }

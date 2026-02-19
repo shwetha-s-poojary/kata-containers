@@ -861,6 +861,10 @@ func (q *qemu) createPCIeTopology(qemuConfig *govmmQemu.Config, hypervisorConfig
 				return fmt.Errorf("Cannot get VFIO device from IOMMUFD with device: %v err: %v", dev, err)
 			}
 		} else {
+			if q.config.ConfidentialGuest {
+				return fmt.Errorf("ConfidentialGuest needs IOMMUFD - cannot use %s", dev.HostPath)
+			}
+
 			vfioDevices, err = drivers.GetAllVFIODevicesFromIOMMUGroup(dev)
 			if err != nil {
 				return fmt.Errorf("Cannot get all VFIO devices from IOMMU group with device: %v err: %v", dev, err)
@@ -1094,8 +1098,10 @@ func (q *qemu) LogAndWait(qemuCmd *exec.Cmd, reader io.ReadCloser) {
 			q.Logger().WithField("qemuPid", pid).Error(text)
 		}
 	}
-	q.Logger().Infof("Stop logging QEMU (qemuPid=%d)", pid)
-	qemuCmd.Wait()
+	q.Logger().WithField("qemuPid", pid).Infof("Stop logging QEMU")
+	if err := qemuCmd.Wait(); err != nil {
+		q.Logger().WithField("qemuPid", pid).WithField("error", err).Warn("QEMU exited with an error")
+	}
 }
 
 // StartVM will start the Sandbox's VM.

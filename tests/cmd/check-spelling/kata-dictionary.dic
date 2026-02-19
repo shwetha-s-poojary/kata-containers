@@ -1,4 +1,4 @@
-403
+417
 ACPI/AB
 ACS/AB
 API/AB
@@ -33,7 +33,6 @@ Docker/B
 Dockerfile/AB
 Dragonball/B
 EulerOS/B
-erofs/A
 FS/AB
 FaaS/B
 Facebook/B
@@ -94,6 +93,7 @@ Mellanox/B
 Minikube/B
 MonitorTest/A
 NEMU/AB
+NFD/AB
 NIC/AB
 NVDIMM/AB
 NVIDIA/A
@@ -135,10 +135,14 @@ RBAC/AB
 RDMA/AB
 RHEL/B
 RNG/AB
+RuntimeClass/B
+RuntimeClasses/B
 Rustlang/B
 SCSI/AB
 SDK/AB
+SEL/AB
 SELinux/B
+SEV-SNP/B
 SHA/AB
 SLES/B
 SPDX/AB
@@ -154,6 +158,7 @@ Submodule/A
 Sysbench/B
 TBD/AB
 TDX
+TEE/AB
 TOC/AB
 TOML/AB
 TTY/AB
@@ -195,6 +200,7 @@ aarch64/B
 ack/A
 acpi
 amd64/B
+api/AB
 arg
 arm64/B
 auditability
@@ -210,6 +216,7 @@ centric/B
 cgroup/AB
 checkbox/A
 chipset/AB
+chroot
 ci/AB
 cnn/B
 codebase
@@ -247,6 +254,7 @@ fio/B
 freeform
 fs/B
 gRPC/AB
+genpolicy/AB
 gic
 golang/B
 goroutine/AB
@@ -276,6 +284,7 @@ jq/B
 k8s/B
 kata
 keypair/A
+kubernetes/B
 libcontainer/B
 libelf/B
 libvirt/B
@@ -303,8 +312,10 @@ nack/AB
 namespace/ABCD
 netlink
 netns/AB
+nodeSelector/B
+nodeSelectors/B
+nv/AB
 nvidia/A
-nydus/A
 onwards
 openSUSE/B
 openshift/B
@@ -387,9 +398,11 @@ util/A
 vCPU/AB
 vGPU
 vSphere/B
+vectorAdd
 vendored
 vendoring
 versioning
+vfio/AB
 vhost/AB
 virtcontainers/B
 virtio/AB

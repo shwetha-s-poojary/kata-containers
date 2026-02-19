@@ -18,7 +18,6 @@ repo_root_dir="${repo_root_dir:-}"
 
 [[ -n "${repo_root_dir}" ]] || die "repo_root_dir is not set"
 readonly kernel_builder="${repo_root_dir}/tools/packaging/kernel/build-kernel.sh"
-readonly initramfs_builder="${repo_root_dir}/tools/packaging/static-build/initramfs/build.sh"
 
 BUILDX=
 PLATFORM=
@@ -32,10 +31,6 @@ kernel_builder_args="-a ${ARCH:-} $*"
 KERNEL_DEBUG_ENABLED=${KERNEL_DEBUG_ENABLED:-"no"}
 
 if [[ "${MEASURED_ROOTFS}" == "yes" ]]; then
-	info "build initramfs for cc kernel"
-	"${initramfs_builder}"
-	# Turn on the flag to build the kernel with support to
-	# measured rootfs.
 	kernel_builder_args+=" -m"
 fi
 

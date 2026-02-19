@@ -38,7 +38,7 @@ build_initrd() {
 	info "initrd os: $os_name"
 	info "initrd os version: $os_version"
 	make initrd \
-		VARIANT="${image_initrd_suffix}" \
+		BUILD_VARIANT="${image_initrd_suffix}" \
 		DISTRO="$os_name" \
 		DEBUG="${DEBUG:-}" \
 		OS_VERSION="${os_version}" \
@@ -52,7 +52,7 @@ build_initrd() {
 		GUEST_HOOKS_TARBALL="${GUEST_HOOKS_TARBALL}"
 
 	if [[ "${image_initrd_suffix}" == "nvidia-gpu"* ]]; then
-		nvidia_driver_version=$(cat "${builddir}"/initrd-image/*/nvidia_driver_version)
+		nvidia_driver_version=$(get_from_kata_deps .externals.nvidia.driver.version)
 		artifact_name=${artifact_name/.initrd/"-${nvidia_driver_version}".initrd}
 	fi
 
@@ -68,7 +68,7 @@ build_image() {
 	info "image os: $os_name"
 	info "image os version: $os_version"
 	make image \
-		VARIANT="${image_initrd_suffix}" \
+		BUILD_VARIANT="${image_initrd_suffix}" \
 		DISTRO="${os_name}" \
 		DEBUG="${DEBUG:-}" \
 		USE_DOCKER="1" \
@@ -81,13 +81,14 @@ build_image() {
 		GUEST_HOOKS_TARBALL="${GUEST_HOOKS_TARBALL}"
 
 	if [[ "${image_initrd_suffix}" == "nvidia-gpu"* ]]; then
-		nvidia_driver_version=$(cat "${builddir}"/rootfs-image/*/nvidia_driver_version)
+		nvidia_driver_version=$(get_from_kata_deps .externals.nvidia.driver.version)
 		artifact_name=${artifact_name/.image/"-${nvidia_driver_version}".image}
 	fi
 
 	mv -f "kata-containers.img" "${install_dir}/${artifact_name}"
-	if [ -e "root_hash.txt" ]; then
-	    cp root_hash.txt "${install_dir}/"
+	if [[ -e "root_hash_${image_initrd_suffix}.txt" ]]; then
+		info "Copying root hash file for variant: ${image_initrd_suffix} ${PWD}"
+		cp "root_hash_${image_initrd_suffix}.txt" "${install_dir}/"
 	fi
 	(
 		cd "${install_dir}"

@@ -74,8 +74,137 @@ const VIRTIO_9P: &str = "virtio-9p";
 const VIRTIO_FS: &str = "virtio-fs";
 const VIRTIO_FS_INLINE: &str = "inline-virtio-fs";
 const MAX_BRIDGE_SIZE: u32 = 5;
+const MAX_NETWORK_QUEUES: u32 = 256;
 
 const KERNEL_PARAM_DELIMITER: &str = " ";
+/// Block size (in bytes) used by dm-verity block size validation.
+pub const VERITY_BLOCK_SIZE_BYTES: u64 = 512;
+/// Parsed kernel dm-verity parameters.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub struct KernelVerityParams {
+    /// Root hash value.
+    pub root_hash: String,
+    /// Salt used to generate verity hash tree.
+    pub salt: String,
+    /// Number of data blocks in the verity mapping.
+    pub data_blocks: u64,
+    /// Data block size in bytes.
+    pub data_block_size: u64,
+    /// Hash block size in bytes.
+    pub hash_block_size: u64,
+}
+
+/// Parse and validate kernel dm-verity parameters.
+pub fn parse_kernel_verity_params(params: &str) -> Result<Option<KernelVerityParams>> {
+    if params.trim().is_empty() {
+        return Ok(None);
+    }
+
+    let mut values = HashMap::new();
+    for field in params.split(',') {
+        let field = field.trim();
+        if field.is_empty() {
+            continue;
+        }
+        let mut parts = field.splitn(2, '=');
+        let key = parts.next().unwrap_or("");
+        let value = parts.next().ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Invalid kernel_verity_params entry: {field}"),
+            )
+        })?;
+        if key.is_empty() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Invalid kernel_verity_params entry: {field}"),
+            ));
+        }
+        values.insert(key.to_string(), value.to_string());
+    }
+
+    let root_hash = values
+        .get("root_hash")
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Missing kernel_verity_params root_hash",
+            )
+        })?
+        .to_string();
+
+    let salt = values.get("salt").cloned().unwrap_or_default();
+
+    let parse_uint_field = |name: &str| -> Result<u64> {
+        match values.get(name) {
+            Some(value) if !value.is_empty() => value.parse::<u64>().map_err(|e| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("Invalid kernel_verity_params {} '{}': {}", name, value, e),
+                )
+            }),
+            _ => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Missing kernel_verity_params {name}"),
+            )),
+        }
+    };
+
+    let data_blocks = parse_uint_field("data_blocks")?;
+    let data_block_size = parse_uint_field("data_block_size")?;
+    let hash_block_size = parse_uint_field("hash_block_size")?;
+
+    if salt.is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Missing kernel_verity_params salt",
+        ));
+    }
+    if data_blocks == 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Invalid kernel_verity_params data_blocks: must be non-zero",
+        ));
+    }
+    if data_block_size == 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Invalid kernel_verity_params data_block_size: must be non-zero",
+        ));
+    }
+    if hash_block_size == 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Invalid kernel_verity_params hash_block_size: must be non-zero",
+        ));
+    }
+    if data_block_size % VERITY_BLOCK_SIZE_BYTES != 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!(
+                "Invalid kernel_verity_params data_block_size: must be multiple of {}",
+                VERITY_BLOCK_SIZE_BYTES
+            ),
+        ));
+    }
+    if hash_block_size % VERITY_BLOCK_SIZE_BYTES != 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!(
+                "Invalid kernel_verity_params hash_block_size: must be multiple of {}",
+                VERITY_BLOCK_SIZE_BYTES
+            ),
+        ));
+    }
+
+    Ok(Some(KernelVerityParams {
+        root_hash,
+        salt,
+        data_blocks,
+        data_block_size,
+        hash_block_size,
+    }))
+}
 
 lazy_static! {
     static ref HYPERVISOR_PLUGINS: Mutex<HashMap<String, Arc<dyn ConfigPlugin>>> =
@@ -294,6 +423,10 @@ pub struct BootInfo {
     #[serde(default)]
     pub kernel_params: String,
 
+    /// Guest kernel dm-verity parameters.
+    #[serde(default)]
+    pub kernel_verity_params: String,
+
     /// Path to initrd file on host.
     #[serde(default)]
     pub initrd: String,
@@ -439,6 +572,17 @@ impl BootInfo {
         all_params.extend(new_param_list);
 
         self.kernel_params = all_params.join(KERNEL_PARAM_DELIMITER);
+    }
+
+    /// Replace kernel dm-verity parameters after validation.
+    pub fn replace_kernel_verity_params(&mut self, new_params: &str) -> Result<()> {
+        if new_params.trim().is_empty() {
+            return Ok(());
+        }
+
+        parse_kernel_verity_params(new_params)?;
+        self.kernel_verity_params = new_params.to_string();
+        Ok(())
     }
 
     /// Validate guest kernel image annotation.
@@ -770,21 +914,16 @@ impl MachineInfo {
 }
 
 /// Huge page type for VM RAM backend
-#[derive(Clone, Debug, Deserialize_enum_str, Serialize_enum_str, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize_enum_str, Serialize_enum_str, PartialEq, Eq, Default)]
 pub enum HugePageType {
     /// Memory allocated using hugetlbfs backend
     #[serde(rename = "hugetlbfs")]
+    #[default]
     Hugetlbfs,
 
     /// Memory allocated using transparent huge pages
     #[serde(rename = "thp")]
     THP,
-}
-
-impl Default for HugePageType {
-    fn default() -> Self {
-        Self::Hugetlbfs
-    }
 }
 
 /// Virtual machine memory configuration information.
@@ -954,6 +1093,13 @@ impl NetworkInfo {
     /// Adjusts the network configuration information after loading from a configuration file.
     /// (Currently, this method performs no adjustments.)
     pub fn adjust_config(&mut self) -> Result<()> {
+        if self.network_queues == 0 {
+            self.network_queues = 1;
+        }
+        if self.network_queues > MAX_NETWORK_QUEUES {
+            self.network_queues = MAX_NETWORK_QUEUES;
+        }
+
         Ok(())
     }
 

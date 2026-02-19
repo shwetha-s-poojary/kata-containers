@@ -29,8 +29,20 @@ enum Action {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Set log level based on DEBUG environment variable
+    // This must be done before initializing the logger
+    let debug_enabled = std::env::var("DEBUG")
+        .map(|v| v.eq_ignore_ascii_case("true") || v == "1")
+        .unwrap_or(false);
+
+    let log_level = if debug_enabled {
+        log::LevelFilter::Debug
+    } else {
+        log::LevelFilter::Info
+    };
+
     env_logger::Builder::from_default_env()
-        .filter_level(log::LevelFilter::Info)
+        .filter_level(log_level)
         .init();
 
     let args = Args::parse();
@@ -54,16 +66,26 @@ async fn main() -> Result<()> {
     match args.action {
         Action::Install => {
             install(&config, &runtime).await?;
-            
-            // DEPLOYMENT MODEL: Install runs as DaemonSet
-            // After installation completes, the pod must stay alive to maintain
-            // the kata-runtime label and artifacts. Sleep forever to keep pod running.
-            info!("Install completed, daemonset mode: sleeping forever");
-            std::future::pending::<()>().await;
+
+            // DEPLOYMENT MODEL: Install runs as DaemonSet. Stay alive to maintain
+            // the kata-runtime label and artifacts; exit gracefully on SIGTERM.
+            info!("Install completed, daemonset mode: waiting for SIGTERM");
+            use tokio::signal::unix::{signal, SignalKind};
+            match signal(SignalKind::terminate()) {
+                Ok(mut sigterm) => {
+                    sigterm.recv().await;
+                    return Ok(());
+                }
+                Err(e) => {
+                    log::warn!("Failed to register SIGTERM handler: {}, sleeping forever", e);
+                    std::future::pending::<()>().await;
+                    return Ok(());
+                }
+            }
         }
         Action::Cleanup => {
             cleanup(&config, &runtime).await?;
-            
+
             // DEPLOYMENT MODEL: Cleanup runs as Job or Helm post-delete hook
             // For Helm post-delete hooks, exit immediately.
             // This ensures the pod terminates cleanly without waiting
@@ -71,13 +93,13 @@ async fn main() -> Result<()> {
                 info!("Cleanup completed (Helm post-delete hook), exiting with status 0");
                 std::process::exit(0);
             }
-            
+
             // For regular cleanup jobs, exit normally after completion
             info!("Cleanup completed, exiting");
         }
         Action::Reset => {
             reset(&config, &runtime).await?;
-            
+
             // DEPLOYMENT MODEL: Reset runs as Job
             // Exit after completion so the job can complete
             info!("Reset completed, exiting");
@@ -165,7 +187,7 @@ async fn install(config: &config::Config, runtime: &str) -> Result<()> {
         None => {}
     }
 
-    runtime::containerd::setup_containerd_config_files(runtime, config)?;
+    runtime::containerd::setup_containerd_config_files(runtime, config).await?;
 
     artifacts::install_artifacts(config).await?;
 
@@ -202,8 +224,8 @@ async fn cleanup(config: &config::Config, runtime: &str) -> Result<()> {
         kata_deploy_installations
     );
 
-    if config.helm_post_delete_hook && kata_deploy_installations == 0 {
-        info!("Helm post-delete hook: removing kata-runtime label");
+    if kata_deploy_installations == 0 {
+        info!("Removing kata-runtime label from node");
         k8s::label_node(config, "katacontainers.io/kata-runtime", None, false).await?;
         info!("Successfully removed kata-runtime label");
     }
@@ -224,18 +246,6 @@ async fn cleanup(config: &config::Config, runtime: &str) -> Result<()> {
     info!("Cleaning up CRI runtime configuration");
     runtime::cleanup_cri_runtime(config, runtime).await?;
     info!("Successfully cleaned up CRI runtime configuration");
-
-    if !config.helm_post_delete_hook && kata_deploy_installations == 0 {
-        info!("Setting cleanup label on node");
-        k8s::label_node(
-            config,
-            "katacontainers.io/kata-runtime",
-            Some("cleanup"),
-            true,
-        )
-        .await?;
-        info!("Successfully set cleanup label");
-    }
 
     info!("Removing kata artifacts from host");
     artifacts::remove_artifacts(config).await?;

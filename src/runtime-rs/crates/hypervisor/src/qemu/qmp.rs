@@ -14,7 +14,7 @@ use kata_types::rootless::is_rootless;
 use nix::sys::socket::{sendmsg, ControlMessage, MsgFlags};
 use qapi_qmp::{
     self as qmp, BlockdevAioOptions, BlockdevOptions, BlockdevOptionsBase,
-    BlockdevOptionsGenericFormat, BlockdevOptionsRaw, BlockdevRef, PciDeviceInfo,
+    BlockdevOptionsGenericFormat, BlockdevOptionsRaw, BlockdevRef, MigrationInfo, PciDeviceInfo,
 };
 use qapi_qmp::{migrate, migrate_incoming, migrate_set_capabilities};
 use qapi_qmp::{MigrationCapability, MigrationCapabilityStatus};
@@ -28,8 +28,13 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use qapi_spec::Dictionary;
+use std::thread;
+use std::time::Instant;
+
 /// default qmp connection read timeout
 const DEFAULT_QMP_READ_TIMEOUT: u64 = 250;
+const DEFAULT_QMP_CONNECT_DEADLINE_MS: u64 = 5000;
+const DEFAULT_QMP_RETRY_SLEEP_MS: u64 = 50;
 
 pub struct Qmp {
     qmp: qapi::Qmp<qapi::Stream<BufReader<UnixStream>, UnixStream>>,
@@ -58,29 +63,43 @@ impl Debug for Qmp {
 
 impl Qmp {
     pub fn new(qmp_sock_path: &str) -> Result<Self> {
-        let stream = UnixStream::connect(qmp_sock_path)?;
+        let try_new_once_fn = || -> Result<Qmp> {
+            let stream = UnixStream::connect(qmp_sock_path)?;
 
-        // Set the read timeout to protect runtime-rs from blocking forever
-        // trying to set up QMP connection if qemu fails to launch.  The exact
-        // value is a matter of judegement.  Setting it too long would risk
-        // being ineffective since container runtime would timeout first anyway
-        // (containerd's task creation timeout is 2 s by default).  OTOH
-        // setting it too short would risk interfering with a normal launch,
-        // perhaps just seeing some delay due to a heavily loaded host.
-        stream.set_read_timeout(Some(Duration::from_millis(DEFAULT_QMP_READ_TIMEOUT)))?;
+            stream
+                .set_read_timeout(Some(Duration::from_millis(DEFAULT_QMP_READ_TIMEOUT)))
+                .context("set qmp read timeout")?;
 
-        let mut qmp = Qmp {
-            qmp: qapi::Qmp::new(qapi::Stream::new(
-                BufReader::new(stream.try_clone()?),
-                stream,
-            )),
-            guest_memory_block_size: 0,
+            let mut qmp = Qmp {
+                qmp: qapi::Qmp::new(qapi::Stream::new(
+                    BufReader::new(stream.try_clone()?),
+                    stream,
+                )),
+                guest_memory_block_size: 0,
+            };
+
+            let info = qmp.qmp.handshake().context("qmp handshake failed")?;
+            info!(sl!(), "QMP initialized: {:#?}", info);
+
+            Ok(qmp)
         };
 
-        let info = qmp.qmp.handshake()?;
-        info!(sl!(), "QMP initialized: {:#?}", info);
+        let deadline = Instant::now() + Duration::from_millis(DEFAULT_QMP_CONNECT_DEADLINE_MS);
+        let mut last_err: Option<anyhow::Error> = None;
 
-        Ok(qmp)
+        while Instant::now() < deadline {
+            match try_new_once_fn() {
+                Ok(qmp) => return Ok(qmp),
+                Err(e) => {
+                    debug!(sl!(), "QMP not ready yet: {}", e);
+                    last_err = Some(e);
+                    thread::sleep(Duration::from_millis(DEFAULT_QMP_RETRY_SLEEP_MS));
+                }
+            }
+        }
+
+        Err(last_err.unwrap_or_else(|| anyhow!("QMP init timed out")))
+            .with_context(|| format!("timed out waiting for QMP ready: {}", qmp_sock_path))
     }
 
     pub fn set_ignore_shared_memory_capability(&mut self) -> Result<()> {
@@ -98,20 +117,27 @@ impl Qmp {
     pub fn execute_migration(&mut self, uri: &str) -> Result<()> {
         self.qmp
             .execute(&migrate {
+                channels: None,
                 detach: None,
                 resume: None,
-                blk: None,
-                inc: None,
-                uri: uri.to_string(),
+                uri: Some(uri.to_string()),
             })
             .map(|_| ())
             .context("execute migration")
     }
 
+    pub async fn execute_query_migrate(&mut self) -> Result<MigrationInfo> {
+        let migrate_info = self.qmp.execute(&qmp::query_migrate {})?;
+
+        Ok(migrate_info)
+    }
+
     pub fn execute_migration_incoming(&mut self, uri: &str) -> Result<()> {
         self.qmp
             .execute(&migrate_incoming {
-                uri: uri.to_string(),
+                channels: None,
+                exit_on_error: None,
+                uri: Some(uri.to_string()),
             })
             .map(|_| ())
             .context("execute migration incoming")
@@ -128,29 +154,42 @@ impl Qmp {
             }
             let core_id = match vcpu.props.core_id {
                 Some(id) => id,
-                None => continue,
+                None => {
+                    warn!(sl!(), "hotpluggable vcpu has no core_id, skipping");
+                    continue;
+                }
             };
             if vcpu.qom_path.is_some() {
                 info!(sl!(), "hotpluggable vcpu {} hotplugged already", core_id);
                 continue;
             }
-            let socket_id = match vcpu.props.socket_id {
-                Some(id) => id,
-                None => continue,
-            };
-            let thread_id = match vcpu.props.thread_id {
-                Some(id) => id,
-                None => continue,
-            };
-
+            let driver = &vcpu.type_;
             let mut cpu_args = Dictionary::new();
-            cpu_args.insert("socket-id".to_owned(), socket_id.into());
             cpu_args.insert("core-id".to_owned(), core_id.into());
-            cpu_args.insert("thread-id".to_owned(), thread_id.into());
+            if !is_flat_cpu_topology(driver) {
+                match (vcpu.props.socket_id, vcpu.props.thread_id) {
+                    (Some(socket_id), Some(thread_id)) => {
+                        cpu_args.insert("socket-id".to_owned(), socket_id.into());
+                        cpu_args.insert("thread-id".to_owned(), thread_id.into());
+                    }
+                    (None, None) => {
+                        warn!(sl!(), "hotpluggable vcpu {} has no socket_id and thread_id for driver {}, skipping", core_id, driver);
+                        continue;
+                    }
+                    (None, _) => {
+                        warn!(sl!(), "hotpluggable vcpu {} has no socket_id for driver {}, skipping", core_id, driver);
+                        continue;
+                    }
+                    (_, None) => {
+                        warn!(sl!(), "hotpluggable vcpu {} has no thread_id for driver {}, skipping", core_id, driver);
+                        continue;
+                    }
+                }
+            }
             self.qmp.execute(&qmp::device_add {
                 bus: None,
                 id: Some(vcpu_id_from_core_id(core_id)),
-                driver: hotpluggable_cpus[0].type_.clone(),
+                driver: driver.clone(),
                 arguments: cpu_args,
             })?;
 
@@ -270,6 +309,7 @@ impl Qmp {
                 pmem: None,
                 readonly: None,
                 mem_path: "/dev/shm".to_owned(),
+                rom: None,
             },
         });
         self.qmp.execute(&memory_backend)?;
@@ -834,7 +874,6 @@ impl Qmp {
                 | qmp::CpuInfoFast::mips64(cpu_info)
                 | qmp::CpuInfoFast::mips64el(cpu_info)
                 | qmp::CpuInfoFast::mipsel(cpu_info)
-                | qmp::CpuInfoFast::nios2(cpu_info)
                 | qmp::CpuInfoFast::or1k(cpu_info)
                 | qmp::CpuInfoFast::ppc(cpu_info)
                 | qmp::CpuInfoFast::ppc64(cpu_info)
@@ -867,6 +906,12 @@ impl Qmp {
 
 fn vcpu_id_from_core_id(core_id: i64) -> String {
     format!("cpu-{core_id}")
+}
+
+/// Returns whether the CPU driver uses a flat topology.
+/// s390x and ppc64le use a flat CPU topology.
+fn is_flat_cpu_topology(driver: &str) -> bool {
+    matches!(driver, "host-s390x-cpu" | "host-powerpc64-cpu")
 }
 
 // The get_pci_path_by_qdev_id function searches a device list for a device matching a given qdev_id,

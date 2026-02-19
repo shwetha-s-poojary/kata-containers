@@ -636,6 +636,15 @@ func addHypervisorPathOverrides(ocispec specs.Spec, config *vc.SandboxConfig, ru
 		}
 	}
 
+	if value, ok := ocispec.Annotations[vcAnnotations.KernelVerityParams]; ok {
+		if value != "" {
+			if _, err := vc.ParseKernelVerityParams(value); err != nil {
+				return fmt.Errorf("invalid kernel_verity_params in annotation: %w", err)
+			}
+			config.HypervisorConfig.KernelVerityParams = value
+		}
+	}
+
 	return nil
 }
 
@@ -774,6 +783,14 @@ func addHypervisorMemoryOverrides(ocispec specs.Spec, sbConfig *vc.SandboxConfig
 		sbConfig.HypervisorConfig.Rootless = enableRootlessHypervisor
 	}); err != nil {
 		return err
+	}
+
+	if annotation, ok := ocispec.Annotations[vcAnnotations.NUMAMapping]; ok {
+		guestNUMANodes, err := vcutils.GetGuestNUMANodes(strings.Fields(annotation))
+		if err != nil {
+			return err
+		}
+		sbConfig.HypervisorConfig.GuestNUMANodes = guestNUMANodes
 	}
 
 	return nil

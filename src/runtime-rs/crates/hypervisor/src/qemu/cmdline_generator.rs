@@ -179,16 +179,13 @@ impl Kernel {
         let mut kernel_params = KernelParams::new(config.debug_info.enable_debug);
 
         if config.boot_info.initrd.is_empty() {
-            // QemuConfig::validate() has already made sure that if initrd is
-            // empty, image cannot be so we don't need to re-check that here
-
-            kernel_params.append(
-                &mut KernelParams::new_rootfs_kernel_params(
-                    &config.boot_info.vm_rootfs_driver,
-                    &config.boot_info.rootfs_type,
-                )
-                .context("adding rootfs params failed")?,
-            );
+            let mut rootfs_params = KernelParams::new_rootfs_kernel_params(
+                &config.boot_info.kernel_verity_params,
+                &config.boot_info.vm_rootfs_driver,
+                &config.boot_info.rootfs_type,
+            )
+            .context("adding rootfs/verity params failed")?;
+            kernel_params.append(&mut rootfs_params);
         }
 
         kernel_params.append(&mut KernelParams::from_string(
@@ -2296,6 +2293,14 @@ impl<'a> QemuCmdLine<'a> {
     }
 
     fn add_iommu(&mut self) {
+        // vIOMMU (Intel IOMMU) is not supported on the "virt" machine type (arm64)
+        if self.machine.r#type == "virt" {
+            self.kernel
+                .params
+                .append(&mut KernelParams::from_string("iommu.passthrough=0"));
+            return;
+        }
+
         let dev_iommu = DeviceIntelIommu::new();
         self.devices.push(Box::new(dev_iommu));
 

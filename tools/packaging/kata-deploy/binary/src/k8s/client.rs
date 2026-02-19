@@ -59,7 +59,7 @@ impl K8sClient {
 
         let labels = node.metadata.labels.get_or_insert_with(Default::default);
 
-        if let Some(value) = label_value {
+        let patch = if let Some(value) = label_value {
             if overwrite || !labels.contains_key(label_key) {
                 labels.insert(label_key.to_string(), value.to_string());
                 info!(
@@ -67,16 +67,23 @@ impl K8sClient {
                     label_key, value, self.node_name
                 );
             }
+            Patch::Merge(json!({
+                "metadata": {
+                    "labels": labels
+                }
+            }))
         } else {
             labels.remove(label_key);
             info!("Removing label {} from node {}", label_key, self.node_name);
-        }
-
-        let patch = Patch::Merge(json!({
-            "metadata": {
-                "labels": labels
-            }
-        }));
+            // JSON merge patch: omit key = leave unchanged. To remove, set key to null.
+            let mut patch_labels = serde_json::Map::new();
+            patch_labels.insert(label_key.to_string(), serde_json::Value::Null);
+            Patch::Merge(json!({
+                "metadata": {
+                    "labels": patch_labels
+                }
+            }))
+        };
 
         let pp = PatchParams::default();
         self.node_api
@@ -98,9 +105,14 @@ impl K8sClient {
         // Note: We use client-side filtering here because Kubernetes field selectors
         // don't support "contains" operations - they only support exact matches and comparisons.
         // Filtering by name containing "kata-deploy" requires client-side processing.
+        // Exclude DaemonSets that are terminating (have deletion_timestamp) so that when our
+        // DaemonSet pod runs cleanup in preStop during uninstall, we count 0 and remove the label.
         let count = daemonsets
             .iter()
             .filter(|ds| {
+                if ds.metadata.deletion_timestamp.is_some() {
+                    return false;
+                }
                 ds.metadata
                     .name
                     .as_ref()
@@ -459,13 +471,48 @@ impl K8sClient {
     }
 }
 
+/// Split a JSONPath string by dots, but respect escaped dots (\.)
+/// Example: "metadata.labels.microk8s\.io/cluster" -> ["metadata", "labels", "microk8s.io/cluster"]
+fn split_jsonpath(path: &str) -> Vec<String> {
+    let mut parts = Vec::new();
+    let mut current = String::new();
+    let mut chars = path.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            // Check if next char is a dot (escaped dot)
+            if chars.peek() == Some(&'.') {
+                current.push(chars.next().unwrap()); // Add the dot literally
+            } else {
+                current.push(c); // Keep the backslash
+            }
+        } else if c == '.' {
+            if !current.is_empty() {
+                parts.push(current);
+                current = String::new();
+            }
+        } else {
+            current.push(c);
+        }
+    }
+
+    if !current.is_empty() {
+        parts.push(current);
+    }
+
+    parts
+}
+
 /// Get value from JSON using JSONPath-like syntax (simplified)
 fn get_jsonpath_value(obj: &serde_json::Value, jsonpath: &str) -> Result<String> {
     // Simple JSONPath implementation for common cases
-    // Supports: .field, .field.subfield, [index]
+    // Supports: .field, .field.subfield, [index], escaped dots (\.)
     let mut current = serde_json::to_value(obj)?;
 
-    for part in jsonpath.trim_start_matches('.').split('.') {
+    // Split by unescaped dots only
+    let parts = split_jsonpath(jsonpath.trim_start_matches('.'));
+
+    for part in parts {
         if part.is_empty() {
             continue;
         }
@@ -489,7 +536,7 @@ fn get_jsonpath_value(obj: &serde_json::Value, jsonpath: &str) -> Result<String>
                 .clone();
         } else {
             current = current
-                .get(part)
+                .get(&part)
                 .ok_or_else(|| anyhow::anyhow!("Field '{part}' not found"))?
                 .clone();
         }
@@ -581,6 +628,25 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_split_jsonpath_simple() {
+        let parts = split_jsonpath("metadata.labels.foo");
+        assert_eq!(parts, vec!["metadata", "labels", "foo"]);
+    }
+
+    #[test]
+    fn test_split_jsonpath_escaped_dot() {
+        // microk8s\.io/cluster should become a single key: microk8s.io/cluster
+        let parts = split_jsonpath(r"metadata.labels.microk8s\.io/cluster");
+        assert_eq!(parts, vec!["metadata", "labels", "microk8s.io/cluster"]);
+    }
+
+    #[test]
+    fn test_split_jsonpath_multiple_escaped_dots() {
+        let parts = split_jsonpath(r"a\.b\.c.d");
+        assert_eq!(parts, vec!["a.b.c", "d"]);
+    }
+
+    #[test]
     fn test_get_jsonpath_value() {
         let json = json!({
             "status": {
@@ -592,5 +658,19 @@ mod tests {
 
         let result = get_jsonpath_value(&json, ".status.nodeInfo.containerRuntimeVersion").unwrap();
         assert_eq!(result, "containerd://1.7.0");
+    }
+
+    #[test]
+    fn test_get_jsonpath_value_with_escaped_dot() {
+        let json = json!({
+            "metadata": {
+                "labels": {
+                    "microk8s.io/cluster": "true"
+                }
+            }
+        });
+
+        let result = get_jsonpath_value(&json, r".metadata.labels.microk8s\.io/cluster").unwrap();
+        assert_eq!(result, "true");
     }
 }

@@ -129,15 +129,13 @@ spec:
                 - "riscv64"
 {{- end }}
       hostPID: true
+      # Allow preStop (cleanup on uninstall) to complete before force-kill
+      terminationGracePeriodSeconds: 120
       containers:
       - name: kube-kata
         image: {{ .Values.image.reference }}:{{ default .Chart.AppVersion .Values.image.tag }}
         imagePullPolicy: {{ .Values.imagePullPolicy }}
-{{- if eq (include "kata-deploy.isRustBuild" .) "true" }}
         command: ["/usr/bin/kata-deploy", "install"]
-{{- else }}
-        command: ["/opt/kata-artifacts/scripts/kata-deploy.sh", "install"]
-{{- end }}
         env:
         - name: NODE_NAME
           valueFrom:
@@ -288,6 +286,10 @@ spec:
         - name: HOST_OS
           value: {{ . | quote }}
 {{- end }}
+{{- if and .Values.customRuntimes.enabled .Values.customRuntimes.runtimes }}
+        - name: CUSTOM_RUNTIMES_ENABLED
+          value: "true"
+{{- end }}
         securityContext:
           privileged: true
         volumeMounts:
@@ -297,6 +299,16 @@ spec:
           mountPath: /etc/containerd/
         - name: host
           mountPath: /host/
+{{- if and .Values.customRuntimes.enabled .Values.customRuntimes.runtimes }}
+        - name: custom-configs
+          mountPath: /custom-configs/
+          readOnly: true
+{{- end }}
+        # On uninstall, each DaemonSet pod runs cleanup for its node before exiting.
+        lifecycle:
+          preStop:
+            exec:
+              command: ["/usr/bin/kata-deploy", "cleanup"]
       volumes:
       - name: crio-conf
         hostPath:
@@ -307,7 +319,16 @@ spec:
       - name: host
         hostPath:
           path: /
+{{- if and .Values.customRuntimes.enabled .Values.customRuntimes.runtimes }}
+      - name: custom-configs
+        configMap:
+{{- if .Values.env.multiInstallSuffix }}
+          name: {{ .Chart.Name }}-custom-configs-{{ .Values.env.multiInstallSuffix }}
+{{- else }}
+          name: {{ .Chart.Name }}-custom-configs
+{{- end }}
+{{- end }}
+{{- with .Values.updateStrategy }}
   updateStrategy:
-    rollingUpdate:
-      maxUnavailable: 1
-    type: RollingUpdate
+    {{- toYaml . | nindent 4 }}
+{{- end}}
