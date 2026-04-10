@@ -35,7 +35,7 @@ jobs:
       packages: write
       id-token: write
       attestations: write
-    uses: ./.github/workflows/ci.yaml
+    uses: ./.github/workflows/ci-ppc64le-only.yaml
     with:
       commit-hash: ${{ github.event.pull_request.head.sha }}
       pr-number: ${{ github.event.pull_request.number }}
@@ -52,3 +52,5 @@ jobs:
       QUAY_DEPLOYER_PASSWORD: ${{ secrets.QUAY_DEPLOYER_PASSWORD }}
       NGC_API_KEY: ${{ secrets.NGC_API_KEY }}
       KBUILD_SIGN_PIN: ${{ secrets.KBUILD_SIGN_PIN }}
+
+# Made with Bob
