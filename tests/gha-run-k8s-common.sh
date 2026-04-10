@@ -798,26 +798,37 @@ function helm_helper() {
 			for shim in ${HELM_SHIMS}; do
 				# Determine supported architectures based on shim name
 				# Most shims support amd64 and arm64, some have specific arch requirements
-				yq -i ".shims.${shim}.enabled = true" "${values_yaml}"
-
-				if is_se_hypervisor "${shim}"; then
-					yq -i ".shims.${shim}.supportedArches = [\"s390x\"]" "${values_yaml}"
-				elif is_cca_hypervisor "${shim}"; then
-					yq -i ".shims.${shim}.supportedArches = [\"arm64\"]" "${values_yaml}"
-				elif is_snp_hypervisor "${shim}" || is_tdx_hypervisor "${shim}" || is_confidential_gpu_hypervisor "${shim}"; then
-					yq -i ".shims.${shim}.supportedArches = [\"amd64\"]" "${values_yaml}"
-				# qemu-coco-dev-runtime-rs is checked explicitly because
-				# qemu-coco-dev (Go runtime) does not support arm64.
-				elif [[ "${shim}" == "qemu-runtime-rs" ]] || [[ "${shim}" == "qemu-coco-dev-runtime-rs" ]]; then
-					yq -i ".shims.${shim}.supportedArches = [\"amd64\", \"arm64\", \"s390x\"]" "${values_yaml}"
-				elif is_non_tee_hypervisor "${shim}"; then
-					yq -i ".shims.${shim}.supportedArches = [\"amd64\", \"s390x\"]" "${values_yaml}"
-				elif [[ "${shim}" == "qemu-nvidia-gpu" ]]; then
-					yq -i ".shims.${shim}.supportedArches = [\"amd64\", \"arm64\"]" "${values_yaml}"
-				else
-					# Default: support amd64, arm64, s390x, ppc64le
-					yq -i ".shims.${shim}.supportedArches = [\"amd64\", \"arm64\", \"s390x\", \"ppc64le\"]" "${values_yaml}"
-				fi
+				case "${shim}" in
+					qemu-se|qemu-se-runtime-rs)
+						yq -i ".shims.${shim}.enabled = true" "${values_yaml}"
+						yq -i ".shims.${shim}.supportedArches = [\"s390x\"]" "${values_yaml}"
+						;;
+					qemu-cca)
+						yq -i ".shims.${shim}.enabled = true" "${values_yaml}"
+						yq -i ".shims.${shim}.supportedArches = [\"arm64\"]" "${values_yaml}"
+						;;
+					qemu-snp|qemu-snp-runtime-rs|qemu-tdx|qemu-tdx-runtime-rs|qemu-nvidia-gpu-snp|qemu-nvidia-gpu-tdx)
+						yq -i ".shims.${shim}.enabled = true" "${values_yaml}"
+						yq -i ".shims.${shim}.supportedArches = [\"amd64\"]" "${values_yaml}"
+						;;
+					qemu-runtime-rs)
+						yq -i ".shims.${shim}.enabled = true" "${values_yaml}"
+						yq -i ".shims.${shim}.supportedArches = [\"amd64\", \"arm64\", \"s390x\", \"ppc64le\"]" "${values_yaml}"
+						;;
+					qemu-coco-dev|qemu-coco-dev-runtime-rs)
+						yq -i ".shims.${shim}.enabled = true" "${values_yaml}"
+						yq -i ".shims.${shim}.supportedArches = [\"amd64\", \"s390x\"]" "${values_yaml}"
+						;;
+					qemu-nvidia-gpu)
+						yq -i ".shims.${shim}.enabled = true" "${values_yaml}"
+						yq -i ".shims.${shim}.supportedArches = [\"amd64\", \"arm64\"]" "${values_yaml}"
+						;;
+					*)
+						# Default: support amd64, arm64, s390x, ppc64le
+						yq -i ".shims.${shim}.enabled = true" "${values_yaml}"
+						yq -i ".shims.${shim}.supportedArches = [\"amd64\", \"arm64\", \"s390x\", \"ppc64le\"]" "${values_yaml}"
+						;;
+				esac
 
 				# Explicitly unset defaults for TEE shims - these will be set based on env vars:
 				# - snapshotter: nydus if HELM_SNAPSHOTTER_HANDLER_MAPPING is set

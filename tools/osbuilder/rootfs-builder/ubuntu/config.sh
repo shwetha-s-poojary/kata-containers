@@ -33,7 +33,7 @@ case "${ARCH}" in
 	x86_64) DEB_ARCH=amd64; REPO_URL=${REPO_URL_X86_64:-${REPO_URL:-http://archive.ubuntu.com/ubuntu}};;
 	*) die "${ARCH} not supported"
 esac
-REPO_URL=${REPO_URL:-http://ports.ubuntu.com}
+REPO_URL=${REPO_URL:-https://ports.ubuntu.com}
 
 if [[ "$(uname -m)" != "${ARCH}" ]]; then
 	case "${ARCH}" in
