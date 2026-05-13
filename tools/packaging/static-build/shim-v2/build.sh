@@ -12,7 +12,7 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 source "${script_dir}/../../scripts/lib.sh"
 
-VMM_CONFIGS="qemu fc"
+VMM_CONFIGS="qemu qemu-runtime-rs fc"
 
 GO_VERSION=${GO_VERSION}
 RUST_VERSION=${RUST_VERSION}
