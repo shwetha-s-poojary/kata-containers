@@ -14,6 +14,12 @@ COPY install_oras.sh /usr/bin/install_oras.sh
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
+RUN sed -i 's/http:\/\/ports.ubuntu.com/https:\/\/ports.ubuntu.com/g' /etc/apt/sources.list && \
+    sed -i 's/http:\/\/archive.ubuntu.com/https:\/\/archive.ubuntu.com/g' /etc/apt/sources.list && \
+    sed -i 's/http:\/\/security.ubuntu.com/https:\/\/security.ubuntu.com/g' /etc/apt/sources.list
+
+RUN echo 'Acquire::https::Verify-Peer "false";' > /etc/apt/apt.conf.d/99verify-peer.conf
+
 # Install yq, oras, and docker
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
