@@ -20,14 +20,19 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 RUN mkdir ${RUSTUP_HOME} ${CARGO_HOME} ${GOCACHE} && \
     chmod -R a+rwX ${RUSTUP_HOME} ${CARGO_HOME} ${GO_HOME}
+RUN sed -i 's|http://ports.ubuntu.com|https://ports.ubuntu.com|g' /etc/apt/sources.list /etc/apt/sources.list.d/* 2>/dev/null || true && \
+    sed -i 's|http://archive.ubuntu.com|https://archive.ubuntu.com|g' /etc/apt/sources.list /etc/apt/sources.list.d/* 2>/dev/null || true
+
 
 # makedev tries to mknod from postinst
 RUN [ -x /usr/bin/systemd-detect-virt ] || ( echo "echo docker" >/usr/bin/systemd-detect-virt && chmod +x /usr/bin/systemd-detect-virt )
 # hadolint ignore=DL3009,SC2046
-RUN apt-get update && \
+RUN apt-get -o Acquire::https::Verify-Peer=false -o Acquire::https::Verify-Host=false update && \
+    DEBIAN_FRONTEND=noninteractive \
+    apt-get -o Acquire::https::Verify-Peer=false -o Acquire::https::Verify-Host=false --no-install-recommends -y install ca-certificates && \
+    apt-get update && \
     DEBIAN_FRONTEND=noninteractive \
     apt-get --no-install-recommends -y install \
-    ca-certificates \
     curl \
     g++ \
     $(gcc_arch="@ARCH@" && [ "$(uname -m)" != "$gcc_arch" ] && ( \
