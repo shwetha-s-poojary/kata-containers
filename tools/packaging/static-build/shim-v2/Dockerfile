@@ -19,7 +19,15 @@ RUN mkdir ${RUSTUP_HOME} ${CARGO_HOME} ${GOCACHE} && \
 ARG GO_VERSION
 ARG RUST_VERSION
 
-RUN apt-get update && \
+# Switch to HTTPS repositories
+RUN sed -i 's|http://ports.ubuntu.com|https://ports.ubuntu.com|g' /etc/apt/sources.list /etc/apt/sources.list.d/* 2>/dev/null || true && \
+    sed -i 's|http://archive.ubuntu.com|https://archive.ubuntu.com|g' /etc/apt/sources.list /etc/apt/sources.list.d/* 2>/dev/null || true
+
+# Temporarily disable certificate verification to install ca-certificates
+RUN apt-get -o Acquire::https::Verify-Peer=false -o Acquire::https::Verify-Host=false update && \
+    apt-get -o Acquire::https::Verify-Peer=false -o Acquire::https::Verify-Host=false install -y --no-install-recommends \
+        ca-certificates && \
+    apt-get update && \
     apt-get install -y --no-install-recommends \
         build-essential \
         ca-certificates \
