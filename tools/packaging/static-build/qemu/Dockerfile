@@ -2,7 +2,7 @@
 # Copyright (c) 2020 Ant Group
 #
 # SPDX-License-Identifier: Apache-2.0
-FROM quay.io/lib/ubuntu:22.04
+FROM public.ecr.aws/ubuntu/ubuntu:22.04
 
 # CACHE_TIMEOUT: date to invalid cache, if the date changes the image will be rebuild
 # This is required to keep build dependencies with security fixes.
