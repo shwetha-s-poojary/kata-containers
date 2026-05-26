@@ -12,7 +12,7 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 source "${script_dir}/../../scripts/lib.sh"
 
-VMM_CONFIGS="qemu fc"
+VMM_CONFIGS="qemu qemu-runtime-rs fc"
 
 GO_VERSION=${GO_VERSION}
 RUST_VERSION=${RUST_VERSION}
@@ -126,6 +126,16 @@ for vmm in ${VMM_CONFIGS}; do
 			if [ ${ARCH} == "ppc64le" ]; then
 				# On ppc64le, replace image line with initrd line
 				sed -i -e 's|^image = .*|initrd = "'${PREFIX}'/share/kata-containers/kata-containers-initrd.img"|' "${config_file}"
+			fi
+		fi
+	done
+done
+
+for config_file in "${DESTDIR}/${PREFIX}/share/defaults/kata-containers/runtime-rs/runtimes/${vmm}/configuration-${vmm}"*.toml; do
+		if [[ -f "${config_file}" ]]; then
+			if [[ "${ARCH}" == "ppc64le" ]]; then
+				# On ppc64le, replace image line with initrd line
+				sed -i -e 's|^image = .*|initrd = "'"${PREFIX}"'/share/kata-containers/kata-containers-initrd.img"|' "${config_file}"
 			fi
 		fi
 	done
