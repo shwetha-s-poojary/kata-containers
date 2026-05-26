@@ -2,6 +2,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
+# from diff image
 FROM public.ecr.aws/ubuntu/ubuntu:22.04
 ARG RUST_TOOLCHAIN
 
