@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-ARG IMAGE_REGISTRY=quay.io/lib
+ARG IMAGE_REGISTRY=public.ecr.aws/ubuntu
 FROM ${IMAGE_REGISTRY}/ubuntu:@OS_VERSION@
 @SET_PROXY@
 
