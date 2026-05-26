@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-FROM ubuntu:22.04
+FROM quay.io/lib/ubuntu:22.04
 ARG RUST_TOOLCHAIN
 
 COPY install_libseccomp.sh /usr/bin/install_libseccomp.sh
