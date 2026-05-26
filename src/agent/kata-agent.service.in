@@ -11,7 +11,7 @@ Wants=kata-containers.target
 
 [Service]
 # Send agent output to tty to allow capture debug logs
-# from a VM vsock port
+# from a VM vsock port port
 StandardOutput=tty
 Type=simple
 ExecStart=@BINDIR@/@AGENT_NAME@
