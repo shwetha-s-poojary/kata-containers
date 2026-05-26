@@ -5,7 +5,7 @@
 #
 
 echo "Let's gather Kata Containers debug information"
-echo ""
+echo "Output"
 echo "::group::Check Kata Containers logs"
 chroot /host /bin/bash -c "sudo journalctl -xe -t kata | tee"
 echo "::endgroup::"
