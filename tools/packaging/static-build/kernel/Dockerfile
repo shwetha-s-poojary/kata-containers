@@ -10,13 +10,19 @@ ARG ARCH
 
 COPY install_yq.sh /usr/bin/install_yq.sh
 
+# Switch to HTTPS repositories to work around HTTP port 80 being blocked
+RUN sed -i 's|http://ports.ubuntu.com|https://ports.ubuntu.com|g' /etc/apt/sources.list /etc/apt/sources.list.d/* 2>/dev/null || true && \
+    sed -i 's|http://archive.ubuntu.com|https://archive.ubuntu.com|g' /etc/apt/sources.list /etc/apt/sources.list.d/* 2>/dev/null || true
+
 # kernel deps
-RUN apt-get update && \
+# Temporarily disable certificate verification to install ca-certificates (chicken-and-egg problem)
+RUN apt-get -o Acquire::https::Verify-Peer=false -o Acquire::https::Verify-Host=false update && \
+    apt-get -o Acquire::https::Verify-Peer=false -o Acquire::https::Verify-Host=false install -y --no-install-recommends ca-certificates && \
+    apt-get update && \
     apt-get install -y --no-install-recommends \
 	    bc \
 	    bison \
 	    build-essential \
-	    ca-certificates \
 	    curl \
 	    debhelper \
 	    dwarves \
