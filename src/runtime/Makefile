@@ -49,7 +49,7 @@ PROJECT_ORG = $(PROJECT_TAG)
 PROJECT_URL = https://github.com/$(PROJECT_ORG)
 PROJECT_BUG_URL = $(PROJECT_URL)/kata-containers/issues/new
 
-# list of scripts to install
+# list of scripts to install on 
 SCRIPTS :=
 
 # list of binaries to install
