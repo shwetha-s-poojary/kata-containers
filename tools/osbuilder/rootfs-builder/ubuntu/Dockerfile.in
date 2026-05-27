@@ -2,8 +2,9 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-ARG IMAGE_REGISTRY=public.ecr.aws/ubuntu
-FROM ${IMAGE_REGISTRY}/ubuntu:@OS_VERSION@
+#ARG IMAGE_REGISTRY=public.ecr.aws/ubuntu
+
+FROM public.ecr.aws/ubuntu/ubuntu:22.04
 @SET_PROXY@
 
 ENV GO_HOME="/opt"
