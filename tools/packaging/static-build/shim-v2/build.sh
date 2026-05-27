@@ -121,17 +121,18 @@ case "${RUNTIME_CHOICE}" in
 esac
 
 for vmm in ${VMM_CONFIGS}; do
+	# Handle Go runtime config files (flat structure)
 	for config_file in "${DESTDIR}/${PREFIX}/share/defaults/kata-containers/configuration-${vmm}"*.toml; do
-		if [ -f "${config_file}" ]; then
-			if [ ${ARCH} == "ppc64le" ]; then
+		if [[ -f "${config_file}" ]]; then
+			if [[ "${ARCH}" == "ppc64le" ]]; then
 				# On ppc64le, replace image line with initrd line
-				sed -i -e 's|^image = .*|initrd = "'${PREFIX}'/share/kata-containers/kata-containers-initrd.img"|' "${config_file}"
+				sed -i -e 's|^image = .*|initrd = "'"${PREFIX}"'/share/kata-containers/kata-containers-initrd.img"|' "${config_file}"
 			fi
 		fi
 	done
-done
-
-for config_file in "${DESTDIR}/${PREFIX}/share/defaults/kata-containers/runtime-rs/runtimes/${vmm}/configuration-${vmm}"*.toml; do
+	
+	# Handle runtime-rs config files (nested structure: runtime-rs/runtimes/${vmm}/)
+	for config_file in "${DESTDIR}/${PREFIX}/share/defaults/kata-containers/runtime-rs/runtimes/${vmm}/configuration-${vmm}"*.toml; do
 		if [[ -f "${config_file}" ]]; then
 			if [[ "${ARCH}" == "ppc64le" ]]; then
 				# On ppc64le, replace image line with initrd line
