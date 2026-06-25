@@ -130,17 +130,20 @@ for vmm in ${VMM_CONFIGS}; do
 			fi
 		fi
 	done
-	
-	# Handle runtime-rs config files (nested structure: runtime-rs/runtimes/${vmm}/)
-	for config_file in "${DESTDIR}/${PREFIX}/share/defaults/kata-containers/runtime-rs/runtimes/${vmm}/configuration-${vmm}"*.toml; do
+done
+
+# Handle runtime-rs config files (flat structure: runtime-rs/)
+# Runtime-rs config filenames don't follow the configuration-${vmm} convention
+# (e.g. configuration-qemu-runtime-rs.toml, configuration-rs-fc.toml), so
+# iterate over all of them once rather than per-vmm.
+if [[ "${ARCH}" == "ppc64le" ]]; then
+	for config_file in "${DESTDIR}/${PREFIX}/share/defaults/kata-containers/runtime-rs/configuration-"*.toml; do
 		if [[ -f "${config_file}" ]]; then
-			if [[ "${ARCH}" == "ppc64le" ]]; then
-				# On ppc64le, replace image line with initrd line
-				sed -i -e 's|^image = .*|initrd = "'"${PREFIX}"'/share/kata-containers/kata-containers-initrd.img"|' "${config_file}"
-			fi
+			# On ppc64le, replace image line with initrd line
+			sed -i -e 's|^image = .*|initrd = "'"${PREFIX}"'/share/kata-containers/kata-containers-initrd.img"|' "${config_file}"
 		fi
 	done
-done
+fi
 
 pushd "${DESTDIR}/${PREFIX}/share/defaults/kata-containers"
 	ln -sf "configuration-qemu.toml" configuration.toml
