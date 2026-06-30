@@ -12,7 +12,7 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 source "${script_dir}/../../scripts/lib.sh"
 
-VMM_CONFIGS="qemu fc"
+VMM_CONFIGS="qemu qemu-runtime-rs fc"
 
 GO_VERSION=${GO_VERSION}
 RUST_VERSION=${RUST_VERSION}
@@ -121,15 +121,29 @@ case "${RUNTIME_CHOICE}" in
 esac
 
 for vmm in ${VMM_CONFIGS}; do
+	# Handle Go runtime config files (flat structure)
 	for config_file in "${DESTDIR}/${PREFIX}/share/defaults/kata-containers/configuration-${vmm}"*.toml; do
-		if [ -f "${config_file}" ]; then
-			if [ ${ARCH} == "ppc64le" ]; then
+		if [[ -f "${config_file}" ]]; then
+			if [[ "${ARCH}" == "ppc64le" ]]; then
 				# On ppc64le, replace image line with initrd line
-				sed -i -e 's|^image = .*|initrd = "'${PREFIX}'/share/kata-containers/kata-containers-initrd.img"|' "${config_file}"
+				sed -i -e 's|^image = .*|initrd = "'"${PREFIX}"'/share/kata-containers/kata-containers-initrd.img"|' "${config_file}"
 			fi
 		fi
 	done
 done
+
+# Handle runtime-rs config files (flat structure: runtime-rs/)
+# Runtime-rs config filenames don't follow the configuration-${vmm} convention
+# (e.g. configuration-qemu-runtime-rs.toml, configuration-rs-fc.toml), so
+# iterate over all of them once rather than per-vmm.
+if [[ "${ARCH}" == "ppc64le" ]]; then
+	for config_file in "${DESTDIR}/${PREFIX}/share/defaults/kata-containers/runtime-rs/configuration-"*.toml; do
+		if [[ -f "${config_file}" ]]; then
+			# On ppc64le, replace image line with initrd line
+			sed -i -e 's|^image = .*|initrd = "'"${PREFIX}"'/share/kata-containers/kata-containers-initrd.img"|' "${config_file}"
+		fi
+	done
+fi
 
 pushd "${DESTDIR}/${PREFIX}/share/defaults/kata-containers"
 	ln -sf "configuration-qemu.toml" configuration.toml

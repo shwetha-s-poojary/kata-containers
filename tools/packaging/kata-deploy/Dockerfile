@@ -38,10 +38,15 @@ RUN \
 	mkdir ${RUSTUP_HOME} ${CARGO_HOME} && \
 	chmod -R a+rwX ${RUSTUP_HOME} ${CARGO_HOME}
 
+# Switch to HTTPS repositories and install packages in one RUN
 RUN \
+	sed -i 's|http://ports.ubuntu.com|https://ports.ubuntu.com|g' /etc/apt/sources.list /etc/apt/sources.list.d/* 2>/dev/null || true && \
+	sed -i 's|http://archive.ubuntu.com|https://archive.ubuntu.com|g' /etc/apt/sources.list /etc/apt/sources.list.d/* 2>/dev/null || true && \
+	apt-get -o Acquire::https::Verify-Peer=false -o Acquire::https::Verify-Host=false update && \
+	apt-get -o Acquire::https::Verify-Peer=false -o Acquire::https::Verify-Host=false --no-install-recommends -y install \
+		ca-certificates && \
 	apt-get update && \
 	apt-get --no-install-recommends -y install \
-		ca-certificates \
 		curl \
 		gcc \
 		libc6-dev \
