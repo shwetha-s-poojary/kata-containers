@@ -39,7 +39,7 @@ RUN \
 	rm "${NYDUS_SNAPSHOTTER_TARBALL}"
 
 #### Build binary package
-FROM ubuntu:22.04 AS rust-builder
+FROM public.ecr.aws/ubuntu/ubuntu:22.04 AS rust-builder
 
 # Default to Rust 1.95
 ARG RUST_TOOLCHAIN=1.95
@@ -54,10 +54,14 @@ RUN \
 	mkdir ${RUSTUP_HOME} ${CARGO_HOME} && \
 	chmod -R a+rwX ${RUSTUP_HOME} ${CARGO_HOME}
 
-RUN \
-	apt-get update && \
+RUN sed -i 's|http://ports.ubuntu.com|https://ports.ubuntu.com|g' /etc/apt/sources.list /etc/apt/sources.list.d/* 2>/dev/null || true && \
+    sed -i 's|http://archive.ubuntu.com|https://archive.ubuntu.com|g' /etc/apt/sources.list /etc/apt/sources.list.d/* 2>/dev/null || true
+
+# Temporarily disable certificate verification to install ca-certificates
+RUN apt-get -o Acquire::https::Verify-Peer=false -o Acquire::https::Verify-Host=false update && \
+    apt-get -o Acquire::https::Verify-Peer=false -o Acquire::https::Verify-Host=false install -y --no-install-recommends ca-certificates && \
+    apt-get update && \
 	apt-get --no-install-recommends -y install \
-		ca-certificates \
 		curl \
 		gcc \
 		libc6-dev \
