@@ -2,7 +2,7 @@
 # Copyright (c) 2020 Ant Group
 #
 # SPDX-License-Identifier: Apache-2.0
-FROM ubuntu:22.04
+FROM public.ecr.aws/ubuntu/ubuntu:22.04
 
 # CACHE_TIMEOUT: date to invalid cache, if the date changes the image will be rebuild
 # This is required to keep build dependencies with security fixes.
@@ -12,14 +12,31 @@ ARG PREFIX
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-RUN apt-get update && apt-get upgrade -y && \
+# Switch to HTTPS repositories to work around HTTP port 80 being blocked
+RUN sed -i 's|http://ports.ubuntu.com|https://ports.ubuntu.com|g' /etc/apt/sources.list /etc/apt/sources.list.d/* 2>/dev/null || true && \
+    sed -i 's|http://archive.ubuntu.com|https://archive.ubuntu.com|g' /etc/apt/sources.list /etc/apt/sources.list.d/* 2>/dev/null || true
+
+RUN if [ "${ARCH}" != "$(uname -m)" ]; then sed -i 's/^deb/deb [arch=amd64]/g' /etc/apt/sources.list && \
+    dpkg --add-architecture "${DPKG_ARCH#:}" && \
+    echo "deb [arch=${DPKG_ARCH#:}] https://ports.ubuntu.com/ jammy main restricted" >> /etc/apt/sources.list && \
+    echo "deb [arch=${DPKG_ARCH#:}] https://ports.ubuntu.com/ jammy-updates main restricted" >> /etc/apt/sources.list && \
+    echo "deb [arch=${DPKG_ARCH#:}] https://ports.ubuntu.com/ jammy universe" >> /etc/apt/sources.list && \
+    echo "deb [arch=${DPKG_ARCH#:}] https://ports.ubuntu.com/ jammy-updates universe" >> /etc/apt/sources.list && \
+    echo "deb [arch=${DPKG_ARCH#:}] https://ports.ubuntu.com/ jammy multiverse" >> /etc/apt/sources.list && \
+    echo "deb [arch=${DPKG_ARCH#:}] https://ports.ubuntu.com/ jammy-updates multiverse" >> /etc/apt/sources.list && \
+    echo "deb [arch=${DPKG_ARCH#:}] https://ports.ubuntu.com/ jammy-backports main restricted universe multiverse" >> /etc/apt/sources.list; fi
+
+# Temporarily disable certificate verification to install ca-certificates (chicken-and-egg problem)
+RUN apt-get -o Acquire::https::Verify-Peer=false -o Acquire::https::Verify-Host=false update && \
+    apt-get -o Acquire::https::Verify-Peer=false -o Acquire::https::Verify-Host=false upgrade -y && \
+    apt-get -o Acquire::https::Verify-Peer=false -o Acquire::https::Verify-Host=false --no-install-recommends install -y ca-certificates && \
+    apt-get update && \
     apt-get --no-install-recommends install -y \
 	    apt-utils \
 	    autoconf \
 	    automake \
 	    bc \
 	    bison \
-	    ca-certificates \
 	    cpio \
 	    dpkg-dev \
 	    flex \
