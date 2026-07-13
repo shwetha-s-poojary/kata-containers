@@ -232,7 +232,7 @@ jobs:
     strategy:
       matrix:
         asset:
-          - shim-v2-go
+          # - shim-v2-go
           - shim-v2-rust
     concurrency:
       group: ${{ github.workflow }}-${{ github.job }}-${{ github.event.pull_request.number || github.ref }}-ppc64le-${{ toJSON(matrix) }}
