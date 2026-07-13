@@ -1144,15 +1144,16 @@ impl MemoryInfo {
     /// QEMU's 256MB block size alignment requirement.
     ///
     /// Ensures default_memory is at least 1024MB and both default_memory
-    /// and default_maxmemory are aligned to 256MB boundaries.
+    /// and default_maxmemory are aligned to 256MB boundaries (rounding up).
     /// Returns an error if aligned values would be equal.
     #[cfg(all(target_arch = "powerpc64", target_endian = "little"))]
-    fn adjust_ppc64_memory_alignment(&mut self) -> Result<()> {
+    pub fn adjust_ppc64_memory_alignment(&mut self) -> Result<()> {
         const PPC64_MEM_BLOCK_SIZE: u64 = 256;
         const MIN_MEMORY_MB: u64 = 1024;
 
+        // Use ceiling division to round up to the nearest 256MB boundary
         fn align_memory(value: u64) -> u64 {
-            (value / PPC64_MEM_BLOCK_SIZE) * PPC64_MEM_BLOCK_SIZE
+            ((value + PPC64_MEM_BLOCK_SIZE - 1) / PPC64_MEM_BLOCK_SIZE) * PPC64_MEM_BLOCK_SIZE
         }
 
         let mut mem_size = u64::from(self.default_memory);
@@ -2147,7 +2148,7 @@ mod tests {
     #[rstest]
     #[case::memory_below_minimum(512, 2048, 1024, 2048)]
     #[case::already_aligned(1024, 2048, 1024, 2048)]
-    #[case::unaligned_rounds_down(1100, 2100, 1024, 2048)]
+    #[case::unaligned_rounds_up(1100, 2100, 1280, 2304)]
     #[cfg(all(target_arch = "powerpc64", target_endian = "little"))]
     fn test_adjust_ppc64_memory_alignment_success(
         #[case] input_memory: u32,
@@ -2178,7 +2179,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case::equal_after_alignment(1024, 1100, "Requires maxmemory > memory")]
+    #[case::equal_after_alignment(1100, 1200, "Requires maxmemory > memory")]
     #[case::maxmemory_less_than_memory(2048, 1500, "Requires maxmemory > memory")]
     #[cfg(all(target_arch = "powerpc64", target_endian = "little"))]
     fn test_adjust_ppc64_memory_alignment_errors(
