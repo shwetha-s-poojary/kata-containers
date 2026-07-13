@@ -178,6 +178,28 @@ impl InitialSizeManager {
             hv.cpu_info.default_vcpus = (hv.cpu_info.overhead_vcpus + self.resource.vcpu).max(1.0);
 
             hv.memory_info.default_memory = hv.memory_info.overhead_memory + self.resource.mem_mb;
+
+            #[cfg(all(target_arch = "powerpc64", target_endian = "little"))]
+            {
+                const PPC64_MEM_BLOCK_SIZE: u64 = 256;
+                const PPC64_MIN_MEMORY_MB: u64 = 1024;
+                let aligned = ((hv.memory_info.default_memory as u64
+                    + PPC64_MEM_BLOCK_SIZE
+                    - 1)
+                    / PPC64_MEM_BLOCK_SIZE)
+                    * PPC64_MEM_BLOCK_SIZE;
+                let final_mem = aligned.max(PPC64_MIN_MEMORY_MB);
+                if final_mem != hv.memory_info.default_memory as u64 {
+                    info!(
+                        sl!(),
+                        "PowerPC: Dynamically aligned pod memory request from {}MB to {}MB",
+                        hv.memory_info.default_memory,
+                        final_mem
+                    );
+                    hv.memory_info.default_memory = final_mem as u32;
+                }
+            }
+
             hv.memory_info.default_maxmemory = hv
                 .memory_info
                 .default_maxmemory
