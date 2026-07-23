@@ -9,6 +9,8 @@ FROM public.ecr.aws/ubuntu/ubuntu:22.04
 ARG CACHE_TIMEOUT
 ARG DEBIAN_FRONTEND=noninteractive
 ARG PREFIX
+ARG ARCH
+ARG DPKG_ARCH
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
