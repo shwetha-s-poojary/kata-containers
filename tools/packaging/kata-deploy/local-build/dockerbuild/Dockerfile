@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-FROM ubuntu:22.04
+FROM public.ecr.aws/ubuntu/ubuntu:22.04
 ENV DEBIAN_FRONTEND=noninteractive
 ENV INSTALL_IN_GOPATH=false
 # Required for libxml2-dev
@@ -13,6 +13,18 @@ COPY install_oras.sh /usr/bin/install_oras.sh
 COPY install_gh.sh /usr/bin/install_gh.sh
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+RUN sed -i 's/http:\/\/ports.ubuntu.com/https:\/\/ports.ubuntu.com/g' /etc/apt/sources.list && \
+    sed -i 's/http:\/\/archive.ubuntu.com/https:\/\/archive.ubuntu.com/g' /etc/apt/sources.list && \
+    sed -i 's/http:\/\/security.ubuntu.com/https:\/\/security.ubuntu.com/g' /etc/apt/sources.list
+
+RUN echo 'Acquire::https::Verify-Peer "false";' > /etc/apt/apt.conf.d/99verify-peer.conf
+
+RUN sed -i 's/http:\/\/ports.ubuntu.com/https:\/\/ports.ubuntu.com/g' /etc/apt/sources.list && \
+    sed -i 's/http:\/\/archive.ubuntu.com/https:\/\/archive.ubuntu.com/g' /etc/apt/sources.list && \
+    sed -i 's/http:\/\/security.ubuntu.com/https:\/\/security.ubuntu.com/g' /etc/apt/sources.list
+
+RUN echo 'Acquire::https::Verify-Peer "false";' > /etc/apt/apt.conf.d/99verify-peer.conf
 
 # Install yq, oras, gh, and docker
 RUN apt-get update && \
