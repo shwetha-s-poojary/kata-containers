@@ -72,37 +72,37 @@ jobs:
     secrets:
       QUAY_DEPLOYER_PASSWORD: ${{ secrets.QUAY_DEPLOYER_PASSWORD }}
 
-  # run-k8s-tests-on-ppc64le:
-  #   if: ${{ inputs.skip-test != 'yes' }}
-  #   needs: publish-kata-deploy-payload-ppc64le
-  #   uses: ./.github/workflows/run-k8s-tests-on-ppc64le.yaml
-  #   with:
-  #     registry: ghcr.io
-  #     repo: ${{ github.repository_owner }}/kata-deploy-ci
-  #     tag: ${{ inputs.tag }}-ppc64le
-  #     commit-hash: ${{ inputs.commit-hash }}
-  #     pr-number: ${{ inputs.pr-number }}
-  #     target-branch: ${{ inputs.target-branch }}
-
-  #Phase 2: Containerd tests (disabled for Phase 1)
-  #Uncomment this job when ready to test containerd (creates/destroys clusters)
-  run-cri-containerd-tests-ppc64le:
+  run-k8s-tests-on-ppc64le:
     if: ${{ inputs.skip-test != 'yes' }}
-    needs: build-kata-static-tarball-ppc64le
-    strategy:
-      fail-fast: false
-      matrix:
-        params: [
-          { containerd_version: active, vmm: qemu },
-          { containerd_version: active, vmm: qemu-runtime-rs },
-        ]
-    uses: ./.github/workflows/run-cri-containerd-tests.yaml
+    needs: publish-kata-deploy-payload-ppc64le
+    uses: ./.github/workflows/run-k8s-tests-on-ppc64le.yaml
     with:
-      tarball-suffix: -${{ inputs.tag }}
+      registry: ghcr.io
+      repo: ${{ github.repository_owner }}/kata-deploy-ci
+      tag: ${{ inputs.tag }}-ppc64le
       commit-hash: ${{ inputs.commit-hash }}
+      pr-number: ${{ inputs.pr-number }}
       target-branch: ${{ inputs.target-branch }}
-      runner: ppc64le-small
-      arch: ppc64le
-      containerd_version: ${{ matrix.params.containerd_version }}
-      vmm: ${{ matrix.params.vmm }}
+
+  # Phase 2: Containerd tests (disabled for Phase 1)
+  # Uncomment this job when ready to test containerd (creates/destroys clusters)
+  # run-cri-containerd-tests-ppc64le:
+  #   if: ${{ inputs.skip-test != 'yes' }}
+  #   needs: build-kata-static-tarball-ppc64le
+  #   strategy:
+  #     fail-fast: false
+  #     matrix:
+  #       params: [
+  #         { containerd_version: active, vmm: qemu },
+  #         { containerd_version: active, vmm: qemu-runtime-rs },
+  #       ]
+  #   uses: ./.github/workflows/run-cri-containerd-tests.yaml
+  #   with:
+  #     tarball-suffix: -${{ inputs.tag }}
+  #     commit-hash: ${{ inputs.commit-hash }}
+  #     target-branch: ${{ inputs.target-branch }}
+  #     runner: ppc64le-small
+  #     arch: ppc64le
+  #     containerd_version: ${{ matrix.params.containerd_version }}
+  #     vmm: ${{ matrix.params.vmm }}
 
