@@ -86,22 +86,22 @@ jobs:
 
   # Phase 2: Containerd tests (disabled for Phase 1)
   # Uncomment this job when ready to test containerd (creates/destroys clusters)
-  # run-cri-containerd-tests-ppc64le:
-  #   if: ${{ inputs.skip-test != 'yes' }}
-  #   needs: build-kata-static-tarball-ppc64le
-  #   strategy:
-  #     fail-fast: false
-  #     matrix:
-  #       params: [
-  #         { containerd_version: active, vmm: qemu },
-  #         { containerd_version: active, vmm: qemu-runtime-rs },
-  #       ]
-  #   uses: ./.github/workflows/run-cri-containerd-tests.yaml
-  #   with:
-  #     tarball-suffix: -${{ inputs.tag }}
-  #     commit-hash: ${{ inputs.commit-hash }}
-  #     target-branch: ${{ inputs.target-branch }}
-  #     runner: ppc64le-small
-  #     arch: ppc64le
-  #     containerd_version: ${{ matrix.params.containerd_version }}
-  #     vmm: ${{ matrix.params.vmm }}
+  run-cri-containerd-tests-ppc64le:
+    if: ${{ inputs.skip-test != 'yes' }}
+    needs: build-kata-static-tarball-ppc64le
+    strategy:
+      fail-fast: false
+      matrix:
+        params: [
+          { containerd_version: active, vmm: qemu },
+          { containerd_version: active, vmm: qemu-runtime-rs },
+        ]
+    uses: ./.github/workflows/run-cri-containerd-tests.yaml
+    with:
+      tarball-suffix: -${{ inputs.tag }}
+      commit-hash: ${{ inputs.commit-hash }}
+      target-branch: ${{ inputs.target-branch }}
+      runner: ppc64le-small
+      arch: ppc64le
+      containerd_version: ${{ matrix.params.containerd_version }}
+      vmm: ${{ matrix.params.vmm }}
