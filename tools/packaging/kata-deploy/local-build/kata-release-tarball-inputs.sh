@@ -162,6 +162,7 @@ kata-static-kernel.tar.zst
 kata-static-qemu.tar.zst
 kata-static-rootfs-initrd.tar.zst
 kata-static-shim-v2-go.tar.zst
+kata-static-shim-v2-rust.tar.zst
 kata-static-virtiofsd.tar.zst
 EOF
 			;;
