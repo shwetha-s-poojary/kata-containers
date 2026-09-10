@@ -589,6 +589,14 @@ else ifeq ($(ARCH), aarch64)
     # QMP vCPU add for virt machine type). Use static sandbox resource
     # management to size the VM upfront instead.
     DEFSTATICRESOURCEMGMT_QEMU := true
+else ifeq ($(ARCH), powerpc64le)
+    # pSeries uses Open Firmware (SLOF), not ACPI, so NVDIMM/virtio-pmem is
+    # not supported. Use virtio-blk-pci for the VM rootfs instead.
+    VMROOTFSDRIVER_QEMU := virtio-blk-pci
+    DEFBLOCKSTORAGEDRIVER_QEMU := virtio-scsi
+    # pSeries requires memory to be aligned to 256MB RMA boundaries. Use static
+    # sandbox resource management to size the VM upfront at creation time.
+    DEFSTATICRESOURCEMGMT_QEMU := true
 else
     VMROOTFSDRIVER_QEMU := virtio-pmem
     DEFBLOCKSTORAGEDRIVER_QEMU := virtio-scsi

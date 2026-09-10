@@ -178,10 +178,14 @@ impl InitialSizeManager {
             hv.cpu_info.default_vcpus = (hv.cpu_info.overhead_vcpus + self.resource.vcpu).max(1.0);
 
             hv.memory_info.default_memory = hv.memory_info.overhead_memory + self.resource.mem_mb;
+
             hv.memory_info.default_maxmemory = hv
                 .memory_info
                 .default_maxmemory
                 .max(hv.memory_info.default_memory);
+
+            #[cfg(all(target_arch = "powerpc64", target_endian = "little"))]
+            hv.memory_info.adjust_ppc64_memory_alignment()?;
         }
 
         hv.cpu_info.default_maxvcpus = hv.cpu_info.default_vcpus.ceil() as u32;
