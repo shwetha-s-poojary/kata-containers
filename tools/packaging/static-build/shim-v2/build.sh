@@ -13,7 +13,7 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=/dev/null
 source "${script_dir}/../../scripts/lib.sh"
 
-VMM_CONFIGS="qemu fc"
+VMM_CONFIGS="qemu qemu-runtime-rs fc"
 
 # shellcheck disable=SC2269
 GO_VERSION=${GO_VERSION}
@@ -128,6 +128,14 @@ case "${RUNTIME_CHOICE}" in
 			--user "$(id -u)":"$(id -g)" \
 			"${container_image}" \
 			bash -c "make PREFIX='${PREFIX}' DESTDIR='${DESTDIR}' ${EXTRA_OPTS}${RUST_EXTRA_OPTS} install"
+
+		if [[ "${ARCH}" == "ppc64le" ]]; then
+			mkdir -p "${DESTDIR}/${PREFIX}/share/defaults/kata-containers/runtime-rs"
+			for config_file in "${DESTDIR}/${PREFIX}/share/defaults/kata-containers/runtime-rs/configuration-"*.toml; do
+				[[ -f "${config_file}" ]] && \
+					sed -i -e 's|^image = .*|initrd = "'"${PREFIX}"'/share/kata-containers/kata-containers-initrd.img"|' "${config_file}"
+			done
+		fi
 		;;
 esac
 
@@ -154,19 +162,16 @@ case "${RUNTIME_CHOICE}" in
 			--env GOMODCACHE=/opt/.cache/gomod \
 			"${container_image}" \
 			bash -c "make PREFIX='${PREFIX}' DESTDIR='${DESTDIR}' ${EXTRA_OPTS}${GO_EXTRA_OPTS} install"
+
+		if [[ "${ARCH}" == "ppc64le" ]]; then
+			mkdir -p "${DESTDIR}/${PREFIX}/share/defaults/kata-containers"
+			for config_file in "${DESTDIR}/${PREFIX}/share/defaults/kata-containers/configuration-"*.toml; do
+				[[ -f "${config_file}" ]] && \
+					sed -i -e 's|^image = .*|initrd = "'"${PREFIX}"'/share/kata-containers/kata-containers-initrd.img"|' "${config_file}"
+			done
+		fi
 		;;
 esac
-
-for vmm in ${VMM_CONFIGS}; do
-	for config_file in "${DESTDIR}/${PREFIX}/share/defaults/kata-containers/configuration-${vmm}"*.toml; do
-		if [[ -f "${config_file}" ]]; then
-			if [[ "${ARCH}" == "ppc64le" ]]; then
-				# On ppc64le, replace image line with initrd line
-				sed -i -e 's|^image = .*|initrd = "'"${PREFIX}"'/share/kata-containers/kata-containers-initrd.img"|' "${config_file}"
-			fi
-		fi
-	done
-done
 
 pushd "${DESTDIR}/${PREFIX}/share/defaults/kata-containers"
 	ln -sf "configuration-qemu.toml" configuration.toml
