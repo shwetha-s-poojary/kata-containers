@@ -548,12 +548,26 @@ impl Machine {
         )))]
         let is_nvdimm_supported = false;
 
+        // The pseries machine defaults to ic-mode=dual: try XIVE first, fall back to
+        // XICS via CAS. kernel_irqchip=on sets kvm_kernel_irqchip_required(), turning
+        // a missing KVM_CAP_PPC_IRQ_XIVE into a fatal exit instead of a soft fallback.
+        //
+        // KVM_CAP_PPC_IRQ_XIVE is absent on LPARs/nested guests, kernels < 5.2 and
+        // all PowerVM LPARs. With allowed, the failed XIVE connect is a soft fallback;
+        // ic-mode=dual then negotiates to XICS via CAS.
+        // Ref: https://www.qemu.org/docs/master/specs/ppc-spapr-xive.html
+        // Ref: https://www.qemu.org/docs/master/system/ppc/pseries.html
+        #[cfg(all(target_arch = "powerpc64", target_endian = "little"))]
+        let kernel_irqchip = None;
+        #[cfg(not(all(target_arch = "powerpc64", target_endian = "little")))]
+        let kernel_irqchip = Some("on".to_owned());
+
         Machine {
             r#type: config.machine_info.machine_type.clone(),
             accel: "kvm".to_owned(),
             options: config.machine_info.machine_accelerators.clone(),
             nvdimm: false,
-            kernel_irqchip: Some("on".to_owned()), // default to off, will be turned on if needed by VFIO devices
+            kernel_irqchip,
             confidential_guest_support: "".to_owned(),
             is_nvdimm_supported,
             memory_backend: None,

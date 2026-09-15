@@ -21,6 +21,17 @@ repo_root_dir="${repo_root_dir:-$(git rev-parse --show-toplevel 2>/dev/null || e
 
 ARCH=${ARCH:-$(uname -m)}
 
+# Compute the dpkg architecture name for the target arch (used in Dockerfile for
+# cross-compile apt sources). dpkg uses different names than the kernel (e.g.
+# ppc64le -> ppc64el, aarch64 -> arm64, x86_64 -> amd64).
+case "${ARCH}" in
+	aarch64) DPKG_ARCH="arm64" ;;
+	ppc64le) DPKG_ARCH="ppc64el" ;;
+	s390x)   DPKG_ARCH="s390x" ;;
+	x86_64)  DPKG_ARCH="amd64" ;;
+	*)       DPKG_ARCH="${ARCH}" ;;
+esac
+
 packaging_dir="${script_dir}/../.."
 qemu_destdir="/tmp/qemu-static/"
 container_engine="${USE_PODMAN:+podman}"
@@ -51,6 +62,8 @@ container_image="${QEMU_CONTAINER_BUILDER:-$(get_qemu_image_name)}"
 	--build-arg CACHE_TIMEOUT="${CACHE_TIMEOUT}" \
 	--build-arg http_proxy="${http_proxy}" \
 	--build-arg https_proxy="${https_proxy}" \
+	--build-arg ARCH="${ARCH}" \
+	--build-arg DPKG_ARCH="${DPKG_ARCH}" \
 	"${packaging_dir}" \
 	-f "${script_dir}/Dockerfile" \
 	-t "${container_image}" && \
